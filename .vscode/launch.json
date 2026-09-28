@@ -1,0 +1,21 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Python: Current File (project root as cwd)",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${file}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "justMyCode": true
+    },
+    {
+      "name": "Python: verify_week1",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/week1/verify_week1.py",
+      "console": "integratedTerminal"
+    }
+  ]
+}

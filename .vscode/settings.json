@@ -1,0 +1,14 @@
+{
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.terminal.activateEnvironment": true,
+  "editor.formatOnSave": true,
+  "editor.rulers": [100],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.codeActionsOnSave": { "source.organizeImports": "explicit" }
+  },
+  "jupyter.interactiveWindow.textEditor.executeSelection": true,
+  "notebook.output.textLineLimit": 60,
+  "files.exclude": { "**/__pycache__": true, "**/.pytest_cache": true },
+  "files.autoSave": "afterDelay"
+}
