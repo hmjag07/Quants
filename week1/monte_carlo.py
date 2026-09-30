@@ -2,8 +2,6 @@
 import numpy as np
 from black_scholes import bs_call, bs_put
 
-
-# ---------------- Day 10: the skeleton (loop-based) ----------------
 def simulate_gbm_paths_loop(S0, r, sigma, T, n_steps, n_paths, seed=None):
     """
     Returns an array of shape (n_paths, n_steps+1): full price path for every simulation.
@@ -23,7 +21,7 @@ def simulate_gbm_paths_loop(S0, r, sigma, T, n_steps, n_paths, seed=None):
     return paths
 
 
-# ---------------- Day 11: vectorised version (same maths, scales up) ----------------
+
 def simulate_gbm_paths(S0, r, sigma, T, n_steps, n_paths, seed=None):
     """
     Same model as above, but all paths and all time steps generated in one shot.
@@ -51,7 +49,6 @@ def simulate_terminal_prices(S0, r, sigma, T, n_paths, seed=None):
     return S0 * np.exp((r - 0.5 * sigma**2) * T + sigma * np.sqrt(T) * Z)
 
 
-# ---------------- Pricing from simulated terminal prices ----------------
 def mc_price_from_payoffs(payoffs, r, T):
     """
     Discount the average payoff, and report the Monte Carlo standard error

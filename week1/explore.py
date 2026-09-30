@@ -1,8 +1,4 @@
-# %% [markdown]
-# # Week 1 exploration notebook (VS Code "Interactive" cells)
-# In VS Code, click "Run Cell" above any `# %%` line, or press Shift+Enter.
 
-# %%
 import numpy as np
 import matplotlib.pyplot as plt
 from payoffs import call_profit, put_profit, straddle_profit

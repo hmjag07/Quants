@@ -1,7 +1,4 @@
-"""
-Week 1 - Day 5/6: Discounting, bond pricing, forward pricing.
-All rates are annual, continuously compounded unless the function name says otherwise.
-"""
+
 import numpy as np
 
 

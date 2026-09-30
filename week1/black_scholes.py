@@ -1,10 +1,4 @@
-"""
-Week 1 - Day 6/7: Naive Black-Scholes (European options, no dividends).
 
-    C = S N(d1) - K e^{-rT} N(d2)
-    P = K e^{-rT} N(-d2) - S N(-d1)
-    d1 = [ln(S/K) + (r + sigma^2/2) T] / (sigma sqrt(T)),   d2 = d1 - sigma sqrt(T)
-"""
 import math
 import numpy as np
 from scipy.stats import norm

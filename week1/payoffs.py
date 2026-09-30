@@ -1,14 +1,7 @@
-"""
-Week 1 - Day 3/4/5: Payoff functions and diagrams.
 
-Payoff  = value at expiry, ignoring what you paid.
-Profit  = payoff minus the premium you paid (or plus the premium you received).
-Convention: position = +1 for long, -1 for short.
-"""
 import numpy as np
 
 
-# ---------- Linear instruments (Day 3) ----------
 def stock_payoff(S_T, S0, position=1):
     """P&L of holding a stock bought/sold at S0."""
     return position * (np.asarray(S_T, dtype=float) - S0)
