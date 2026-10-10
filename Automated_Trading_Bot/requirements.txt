@@ -1,0 +1,5 @@
+numpy
+pandas
+requests
+# only needed for BROKER=ibkr (maintained successor to ib_insync):
+ib_async
