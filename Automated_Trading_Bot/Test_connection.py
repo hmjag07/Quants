@@ -1,8 +1,3 @@
-"""""
-    python test_connection.py --broker oanda
-    python test_connection.py --broker ibkr
-    python test_connection.py --broker oanda --order-test    # places and immediately closes a 1-unit trade
-"""
 import argparse
 import sys
 
@@ -12,7 +7,7 @@ from Config import ConfigError, Settings, load_dotenv
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--broker", choices=["oanda", "ibkr"], required=True)
+    ap.add_argument("--broker", choices=["alpaca", "oanda", "ibkr"], required=True)
     ap.add_argument("--order-test", action="store_true",
                     help="buy 1 unit with a stop/target, then close it (paper accounts only)")
     args = ap.parse_args()

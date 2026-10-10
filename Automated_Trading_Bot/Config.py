@@ -1,16 +1,27 @@
-
 import os
+import re
 from dataclasses import dataclass, field, fields
 from pathlib import Path
 
 GRANULARITY_SECONDS = {"M1": 60, "M5": 300, "M15": 900, "M30": 1800, "H1": 3600}
 IBKR_BAR_SIZE = {"M1": "1 min", "M5": "5 mins", "M15": "15 mins", "M30": "30 mins", "H1": "1 hour"}
 IBKR_LIVE_PORTS = (7496, 4001)          # TWS live, Gateway live  -> refused
-BROKERS = ("paper", "oanda", "ibkr")
+BROKERS = ("paper", "alpaca", "oanda", "ibkr")
 
 
 class ConfigError(ValueError):
     pass
+
+
+def _parse_env_value(raw):
+    """'abc  # note' -> 'abc';   '"a#b"  # note' -> 'a#b' (quoted values may contain '#')."""
+    raw = raw.strip()
+    if raw[:1] in ("'", '"'):
+        end = raw.find(raw[0], 1)
+        if end != -1:
+            return raw[1:end]
+        return raw[1:]
+    return re.split(r"\s+#", raw, maxsplit=1)[0].strip()
 
 
 def load_dotenv(path=".env", override=False):
@@ -24,7 +35,7 @@ def load_dotenv(path=".env", override=False):
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, _, value = line.partition("=")
-        key, value = key.strip(), value.strip().strip("'\"")
+        key, value = key.strip(), _parse_env_value(value)
         loaded[key] = value
         if override or key not in os.environ:
             os.environ[key] = value
@@ -34,7 +45,7 @@ def load_dotenv(path=".env", override=False):
 @dataclass
 class Settings:
     # --- what to trade ---
-    broker: str = "paper"                 # paper | oanda | ibkr
+    broker: str = "paper"                 # paper | alpaca | oanda | ibkr
     instrument: str = "EUR_USD"
     granularity: str = "H1"               # M1 M5 M15 M30 H1
     # --- strategy ---
@@ -47,6 +58,7 @@ class Settings:
     tp_rr: float = 2.0                    # take-profit distance = tp_rr * stop distance
     risk_pct: float = 0.005               # fraction of equity risked per trade (0.5%)
     max_units: int = 500_000
+    max_leverage: float = 1.0             # notional position value <= equity x this (1.0 = no leverage)
     max_daily_loss: float = 0.02          # halt for the UTC day after losing 2% of day-start equity
     max_consecutive_errors: int = 5
     # --- data / paths ---
@@ -56,6 +68,10 @@ class Settings:
     # --- paper broker only ---
     paper_start_equity: float = 100_000.0
     paper_spread: float = 0.00010         # 1 pip on EUR_USD, in price units
+    # --- Alpaca (paper only: the paper host is hard-coded in broker_alpaca.py) ---
+    alpaca_key_id: str = field(default="", repr=False)
+    alpaca_secret_key: str = field(default="", repr=False)
+    alpaca_feed: str = "iex"              # 'iex' is the free feed
     # --- OANDA ---
     oanda_token: str = field(default="", repr=False)
     oanda_account_id: str = ""
@@ -106,6 +122,12 @@ class Settings:
             raise ConfigError("OANDA_ENV must be 'practice': this project is paper-trading only")
         if self.ibkr_port in IBKR_LIVE_PORTS:
             raise ConfigError(f"IBKR_PORT {self.ibkr_port} is a LIVE port: refused (use 7497 or 4002)")
+        if not (0 < self.max_leverage <= 20):
+            raise ConfigError("MAX_LEVERAGE must be in (0, 20]")
+        if self.alpaca_feed not in ("iex", "sip"):
+            raise ConfigError("ALPACA_FEED must be 'iex' or 'sip'")
+        if self.broker == "alpaca" and not (self.alpaca_key_id and self.alpaca_secret_key):
+            raise ConfigError("BROKER=alpaca needs ALPACA_KEY_ID and ALPACA_SECRET_KEY")
         if self.broker == "oanda" and not (self.oanda_token and self.oanda_account_id):
             raise ConfigError("BROKER=oanda needs OANDA_TOKEN and OANDA_ACCOUNT_ID")
 

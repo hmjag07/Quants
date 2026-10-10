@@ -1,16 +1,27 @@
 import math
 
+
 def price_decimals(instrument):
+    """Forex pairs (EUR_USD): 5 dp, JPY pairs: 3 dp. Stocks / ETFs (SPY): 2 dp - brokers reject sub-penny prices."""
+    if "_" not in instrument:
+        return 2
     return 3 if "JPY" in instrument.upper() else 5
 
 
-def position_size(equity, risk_pct, atr, atr_stop_mult, max_units):
-    """Whole units to trade (>= 0). Returns 0 if inputs are unusable."""
+def position_size(equity, risk_pct, atr, atr_stop_mult, max_units, price=None, max_leverage=None):
+    """
+    Whole units to trade (>= 0). Returns 0 if inputs are unusable.
+    If `price` and `max_leverage` are given, the position's notional value is also capped at
+    equity x max_leverage (a tight stop on a calm market could otherwise ask for more than the account can hold).
+    """
     if not all(map(math.isfinite, (equity, atr))) or equity <= 0 or atr <= 0:
         return 0
     stop_distance = atr * atr_stop_mult
     units = int(equity * risk_pct / stop_distance)          # floor: never round risk UP
-    return max(0, min(units, int(max_units)))
+    units = min(units, int(max_units))
+    if price and max_leverage and math.isfinite(price) and price > 0:
+        units = min(units, int(equity * max_leverage / price))
+    return max(0, units)
 
 
 def stop_take_levels(side, entry, atr, atr_stop_mult, tp_rr, decimals=5):

@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from Broker_base import Broker, BrokerError, OrderRejected
+from Broker_base import Broker, BrokerError, MarketClosed, OrderRejected
 from Config import ConfigError, Settings, load_dotenv
 from Risk import position_size, stop_take_levels, daily_loss_breached, price_decimals
 from Strategy import StrategyParams, latest_signal
@@ -123,9 +123,10 @@ class Bot:
         # (5) reconcile
         cur = _sign(pos)
         if target != cur:
+            flat = True
             if cur != 0:
-                self._exit(bar_iso, "signal_change" if st.halted_day != today else "daily_loss_halt")
-            if target != 0:
+                flat = self._exit(bar_iso, "signal_change" if st.halted_day != today else "daily_loss_halt")
+            if target != 0 and flat:                  # never open the other side while still holding this one
                 self._enter(bar_iso, target, sig)
 
         # (6) bookkeeping
@@ -146,19 +147,34 @@ class Bot:
             self.state.day, self.state.day_start_equity = day, float(equity)
 
     def _exit(self, bar_iso, reason):
-        fill = self.broker.close_position(self.s.instrument)
+        """Flatten. Returns True if we are flat afterwards, False if the close failed (retried next bar)."""
+        try:
+            fill = self.broker.close_position(self.s.instrument)
+        except (MarketClosed, OrderRejected) as e:
+            self.tlog.log_trade(bar_time=bar_iso, event="REJECTED", instrument=self.s.instrument,
+                                reason=f"close failed ({reason}): {str(e)[:150]}", broker=self.broker.name)
+            log.warning("could not close position (%s); will retry on the next bar", e)
+            return False
         if fill is None:
-            return
+            return True
         self.tlog.log_trade(bar_time=bar_iso, event="EXIT", instrument=self.s.instrument,
                             side=_sign(fill.units), units=abs(fill.units), price=fill.price,
                             realized_pl=round(fill.pl, 2), equity=round(self.broker.equity(), 2),
                             reason=reason, order_id=fill.order_id, broker=self.broker.name)
+        return True
 
     def _enter(self, bar_iso, side, sig):
         s = self.s
-        bid, ask = self.broker.quote(s.instrument)
+        try:
+            bid, ask = self.broker.quote(s.instrument)
+        except MarketClosed as e:
+            self.tlog.log_trade(bar_time=bar_iso, event="SKIP", instrument=s.instrument, side=side,
+                                reason="market closed", broker=self.broker.name)
+            log.info("market closed - entry skipped, will re-evaluate on the next bar (%s)", e)
+            return
         ref = ask if side > 0 else bid
-        units = position_size(self.broker.equity(), s.risk_pct, sig.atr, s.atr_stop_mult, s.max_units)
+        units = position_size(self.broker.equity(), s.risk_pct, sig.atr, s.atr_stop_mult, s.max_units,
+                             price=ref, max_leverage=s.max_leverage)
         if units == 0:
             self.tlog.log_trade(bar_time=bar_iso, event="SKIP", instrument=s.instrument, side=side,
                                 reason="position size is zero", broker=self.broker.name)
@@ -216,6 +232,9 @@ class Bot:
 
 # ---------------------------------------------------------------------- wiring
 def build_broker(s: Settings) -> Broker:
+    if s.broker == "alpaca":
+        from broker_alpaca import AlpacaBroker
+        return AlpacaBroker(s.alpaca_key_id, s.alpaca_secret_key, s.alpaca_feed)
     if s.broker == "oanda":
         from broker_oanda import OandaBroker
         return OandaBroker(s.oanda_token, s.oanda_account_id, s.oanda_env)
@@ -223,7 +242,7 @@ def build_broker(s: Settings) -> Broker:
         from broker_ibkr import IbkrBroker
         return IbkrBroker(s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
     raise SystemExit("BROKER=paper has no live data feed. Use backtest.py for the paper broker, "
-                     "or set BROKER=oanda / ibkr.")
+                     "or set BROKER=alpaca / oanda / ibkr.")
 
 
 def setup_logging(log_dir):

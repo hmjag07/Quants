@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,6 +9,10 @@ CANDLE_COLUMNS = ["time", "open", "high", "low", "close", "volume"]
 
 class BrokerError(Exception):
     """Anything went wrong talking to the broker (network, auth, bad response)."""
+
+
+class MarketClosed(BrokerError):
+    """The instrument is not tradeable right now (weekend / holiday). Normal, not a fault."""
 
 
 class OrderRejected(BrokerError):
