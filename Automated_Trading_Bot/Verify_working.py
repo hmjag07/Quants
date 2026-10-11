@@ -1,3 +1,70 @@
+import importlib
+import importlib.util
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+HERE = Path(__file__).resolve().parent
+REQUIRED_MODULES = ["backtest", "bot", "broker_alpaca", "broker_base", "broker_paper", "config", "risk",
+                    "strategy", "trade_logger"]
+OPTIONAL_MODULES = ["broker_ibkr", "broker_oanda", "test_connection"]       # renamed if present, never required
+REQUIRED_PACKAGES = ["numpy", "pandas", "requests"]
+
+
+def _case_mismatches():
+    """{actual file name: expected lowercase name} for project files that have the wrong capitalisation."""
+    actual = {p.name for p in HERE.glob("*.py")}
+    return {n: m + ".py" for m in REQUIRED_MODULES + OPTIONAL_MODULES for n in actual if n.lower() == m + ".py" and n != m + ".py"}
+
+
+def _fix_names(bad):
+    """Rename to lowercase in two steps (a one-step case-only rename is ignored on Windows/macOS).
+    Uses `git mv` when the folder is a git repo so the INDEX is lowercase too (the Linux server needs that)."""
+    try:
+        in_git = subprocess.run(["git", "rev-parse", "--is-inside-work-tree"], cwd=HERE, capture_output=True,
+                                text=True).stdout.strip() == "true"
+    except OSError:
+        in_git = False
+    for name, want in bad.items():
+        tmp = "_tmp_rename_" + want
+        for src, dst in ((name, tmp), (tmp, want)):
+            moved = False
+            if in_git:
+                moved = subprocess.run(["git", "mv", src, dst], cwd=HERE, capture_output=True).returncode == 0
+            if not moved:                                       # untracked file, or no git: plain rename
+                os.rename(HERE / src, HERE / dst)
+        print(f"  renamed  {name}  ->  {want}")
+    importlib.invalidate_caches()
+
+
+def _preflight():
+    bad = _case_mismatches()
+    if bad and "--fix-names" in sys.argv:
+        print("Fixing file names:")
+        _fix_names(bad)
+        bad = _case_mismatches()
+    present = {p.name for p in HERE.glob("*.py")}
+    problems = []
+    if bad:
+        problems.append("These files have the wrong capitalisation (imports are case-sensitive, so Python cannot find them):\n"
+                        + "".join(f"      {a}   ->   should be   {b}\n" for a, b in sorted(bad.items()))
+                        + f"    Fix them all in one go:   python {Path(__file__).name} --fix-names")
+    missing = [m + ".py" for m in REQUIRED_MODULES if m + ".py" not in present and m + ".py" not in bad.values()]
+    if missing:
+        problems.append("These required files are not in this folder (" + str(HERE) + "):\n"
+                        + "".join(f"      {m}\n" for m in missing))
+    no_pkgs = [p for p in REQUIRED_PACKAGES if importlib.util.find_spec(p) is None]
+    if no_pkgs:
+        problems.append("Missing Python packages: " + ", ".join(no_pkgs) + "\n    Install them:   pip install -r requirements.txt")
+    if problems:
+        print("\nPREFLIGHT FAILED - nothing was tested.\n")
+        for p in problems:
+            print("  *", p, "\n")
+        sys.exit(1)
+
+
+_preflight()
 
 import logging
 import math
@@ -10,15 +77,14 @@ import numpy as np
 import pandas as pd
 import requests
 
-from Backtest import make_synthetic_bars, performance_stats, run_backtest, trade_stats
-from Bot import Bot, StateStore, seconds_until_next_bar
-from Broker_base import BrokerError, MarketClosed, OrderRejected
-from Broker_alpaca import AlpacaBroker
-from Broker_paper import PaperBroker
-from Config import ConfigError, Settings, load_dotenv
-from Risk import daily_loss_breached, position_size, price_decimals, stop_take_levels
-from Strategy import StrategyParams, compute_indicators, latest_signal, target_series
-from Trade_logger import TradeLogger
+from backtest import make_synthetic_bars, performance_stats, run_backtest, trade_stats
+from bot import Bot, StateStore, seconds_until_next_bar
+from broker_base import BrokerError, MarketClosed, OrderRejected
+from broker_paper import PaperBroker
+from config import ConfigError, Settings, load_dotenv
+from risk import daily_loss_breached, position_size, price_decimals, stop_take_levels
+from strategy import StrategyParams, compute_indicators, latest_signal, target_series
+from trade_logger import TradeLogger
 
 logging.disable(logging.CRITICAL)             # keep the test output readable
 results = []
@@ -78,17 +144,15 @@ check("settings: risk above 5% refused", raises(ConfigError, Settings.from_env, 
 check("settings: non-numeric value rejected", raises(ConfigError, Settings.from_env, {"FAST": "ten"}))
 check("settings: lookback too short for indicators rejected",
       raises(ConfigError, Settings.from_env, {"LOOKBACK_BARS": "30"}))
-check("settings: LIVE oanda env refused", raises(ConfigError, Settings.from_env, {"OANDA_ENV": "live"}))
 check("settings: LIVE IBKR ports refused",
       all(raises(ConfigError, Settings.from_env, {"IBKR_PORT": p}) for p in ("7496", "4001")))
 check("settings: paper IBKR ports accepted",
       all(Settings.from_env({"IBKR_PORT": p}).ibkr_port == int(p) for p in ("7497", "4002")))
-check("settings: oanda broker without token rejected", raises(ConfigError, Settings.from_env, {"BROKER": "oanda"}))
-(tmp / ".env2").write_text("BROKER=oanda   # trailing note\nRISK_PCT=0.01\t# tab note\nOANDA_TOKEN=\"ab#cd\"  # c\nINSTRUMENT='EUR_USD' # d\nGRANULARITY=H1#notacomment\n")
+(tmp / ".env2").write_text("BROKER=alpaca   # trailing note\nRISK_PCT=0.01\t# tab note\nALPACA_SECRET_KEY=\"ab#cd\"  # c\nINSTRUMENT='SPY' # d\nGRANULARITY=H1#notacomment\n")
 d2 = load_dotenv(tmp / ".env2")
 check("dotenv: trailing '# comments' are stripped from unquoted values",
-      d2["BROKER"] == "oanda" and d2["RISK_PCT"] == "0.01" and d2["INSTRUMENT"] == "EUR_USD", str(d2))
-check("dotenv: a quoted value may contain '#'", d2["OANDA_TOKEN"] == "ab#cd")
+      d2["BROKER"] == "alpaca" and d2["RISK_PCT"] == "0.01" and d2["INSTRUMENT"] == "SPY", str(d2))
+check("dotenv: a quoted value may contain '#'", d2["ALPACA_SECRET_KEY"] == "ab#cd")
 check("dotenv: '#' with no preceding space is kept (it is part of the value)", d2["GRANULARITY"] == "H1#notacomment")
 _ex = Path(__file__).with_name("env.example")
 if _ex.exists():
@@ -99,9 +163,9 @@ if _ex.exists():
         os.environ.clear(); os.environ.update(_saved)
     check("shipped env.example, left blank, fails with a clear ConfigError (not a crash)",
           raises(ConfigError, Settings.from_env, dict(_vals)))
-    _vals.update({"OANDA_TOKEN": "tok", "OANDA_ACCOUNT_ID": "101-001-1-001", "ALPACA_KEY_ID": "PKtest", "ALPACA_SECRET_KEY": "sec"})
+    _vals.update({"ALPACA_KEY_ID": "PKtest", "ALPACA_SECRET_KEY": "sec"})
     check("shipped env.example parses and validates once the keys are filled in",
-          Settings.from_env(_vals).broker in ("alpaca", "oanda"))
+          Settings.from_env(_vals).broker == "alpaca" and Settings.from_env(_vals).instrument == "SPY")
     check("shipped env.example has no trailing comments on value lines",
           all(" #" not in l for l in _ex.read_text().splitlines() if "=" in l and not l.lstrip().startswith("#")))
 check("settings: alpaca broker without keys rejected", raises(ConfigError, Settings.from_env, {"BROKER": "alpaca"}))
@@ -111,7 +175,7 @@ check("settings: leverage cap must be in (0, 20]",
       raises(ConfigError, Settings.from_env, {"MAX_LEVERAGE": "0"}) and raises(ConfigError, Settings.from_env, {"MAX_LEVERAGE": "50"}))
 check("settings: default leverage is 1.0 (no leverage)", Settings().max_leverage == 1.0)
 check("settings: alpaca secret never appears in repr", "TOPSECRET" not in repr(Settings(alpaca_secret_key="TOPSECRET")))
-check("settings: token never appears in repr", "SECRET" not in repr(Settings(oanda_token="SECRET")))
+check("settings: key id never appears in repr either", "PKLEAKME" not in repr(Settings(alpaca_key_id="PKLEAKME")))
 
 # =========================== STRATEGY ===========================
 p = StrategyParams(fast=2, slow=3, mom_lookback=2, atr_period=2)
@@ -419,7 +483,7 @@ check("time: 1 second before the hour -> wait 6s (1s + 5s grace)", close(seconds
 check("time: exactly on the hour -> wait a full bar + grace", close(seconds_until_next_bar(3600.0, 3600, 5), 3605.0))
 check("time: mid-bar", close(seconds_until_next_bar(3600 * 10 + 1800, 3600, 5), 1805.0))
 
-# =========================== OANDA ADAPTER (fake HTTP session) ===========================
+# =========================== HTTP TEST DOUBLES (shared by the adapter tests) ===========================
 class FakeResp:
     def __init__(self, status=200, data=None, bad_json=False):
         self.status_code, self._d, self._bad = status, data if data is not None else {}, bad_json
@@ -437,86 +501,6 @@ class FakeSession:
         if isinstance(item, Exception): raise item
         return item
 
-
-def oanda(*resp):
-    sess = FakeSession(*resp)
-    return OandaBroker("TOKEN123", "101-001-1", session=sess, sleep=lambda s: None), sess
-
-
-check("oanda: refuses non-practice env", raises(BrokerError, OandaBroker, "t", "a", "live"))
-check("oanda: requires credentials", raises(BrokerError, OandaBroker, "", "", "practice"))
-
-b, sess = oanda(FakeResp(200, {"account": {"NAV": "101234.56"}}))
-check("oanda equity: reads NAV", close(b.equity(), 101234.56))
-c = sess.calls[0]
-check("oanda: practice host, bearer auth header, timeout set",
-      c["url"] == "https://api-fxpractice.oanda.com/v3/accounts/101-001-1/summary"
-      and c["headers"]["Authorization"] == "Bearer TOKEN123" and c["timeout"] == 10)
-
-b, _ = oanda(FakeResp(200, {"position": {"instrument": "EUR_USD", "long": {"units": "5000"}, "short": {"units": "-2000"}}}))
-check("oanda position: net = long + short (short units negative)", b.position("EUR_USD") == 3000)
-
-b, _ = oanda(FakeResp(200, {"prices": [{"bids": [{"price": "1.08000"}], "asks": [{"price": "1.08012"}], "tradeable": True}]}))
-check("oanda quote: parses bid/ask", b.quote("EUR_USD") == (1.08, 1.08012))
-b, _ = oanda(FakeResp(200, {"prices": [{"bids": [{"price": "1"}], "asks": [{"price": "2"}], "tradeable": False}]}))
-check("oanda quote: market closed raises MarketClosed (a BrokerError subtype)", raises(MarketClosed, b.quote, "EUR_USD"))
-
-candle = lambda t, o, cmp: {"complete": cmp, "volume": 10, "time": t, "mid": {"o": o, "h": o, "l": o, "c": o}}
-b, sess = oanda(FakeResp(200, {"candles": [candle("2025-01-01T01:00:00.000000000Z", "1.1010", True),
-                                           candle("2025-01-01T00:00:00.000000000Z", "1.1000", True),
-                                           candle("2025-01-01T02:00:00.000000000Z", "1.1020", False)]}))
-df = b.candles("EUR_USD", "H1", 3)
-check("oanda candles: drops the incomplete (still forming) bar", len(df) == 2 and close(df.close.iloc[-1], 1.1010))
-check("oanda candles: sorted oldest-first, UTC-aware, float prices",
-      df.time.is_monotonic_increasing and str(df.time.dt.tz) == "UTC" and df.close.dtype == float)
-check("oanda candles: requests mid prices with the right granularity/count",
-      sess.calls[0]["params"] == {"granularity": "H1", "count": 3, "price": "M"})
-check("oanda candles: count above 5000 rejected before any HTTP call", raises(BrokerError, b.candles, "EUR_USD", "H1", 6000))
-
-fill_resp = {"orderFillTransaction": {"id": "77", "orderID": "76", "time": "2025-01-01T02:00:01.000000000Z",
-                                      "units": "1000", "price": "1.10012", "pl": "0.0"}}
-b, sess = oanda(FakeResp(201, fill_resp))
-f = b.market_order("EUR_USD", 1000, stop_loss=1.0984, take_profit=1.1032, tag="sma-test")
-body = sess.calls[0]["json"]["order"]
-check("oanda order: MARKET, FOK, units sent as a STRING", body["type"] == "MARKET" and body["timeInForce"] == "FOK" and body["units"] == "1000")
-check("oanda order: stop/target attached on fill, formatted to 5 dp",
-      body["stopLossOnFill"]["price"] == "1.09840" and body["takeProfitOnFill"]["price"] == "1.10320")
-check("oanda order: parses the fill (price, signed units, order id)", close(f.price, 1.10012) and f.units == 1000 and f.order_id == "76")
-b, sess = oanda(FakeResp(201, fill_resp))
-b.market_order("EUR_USD", -1000)
-check("oanda order: sell sends a negative units string; no stop keys when not given",
-      sess.calls[0]["json"]["order"]["units"] == "-1000" and "stopLossOnFill" not in sess.calls[0]["json"]["order"])
-b, sess = oanda(FakeResp(201, fill_resp))
-b.market_order("USD_JPY", 1000, stop_loss=149.1234)
-check("oanda order: JPY pair prices use 3 decimals", sess.calls[0]["json"]["order"]["stopLossOnFill"]["price"] == "149.123")
-b, _ = oanda(FakeResp(201, {"orderCancelTransaction": {"reason": "INSUFFICIENT_MARGIN"}}))
-check("oanda order: cancel transaction -> OrderRejected with reason", raises(OrderRejected, b.market_order, "EUR_USD", 10**9))
-b, _ = oanda(FakeResp(400, {"errorMessage": "Invalid value specified for 'instrument'"}))
-check("oanda order: HTTP 4xx -> OrderRejected", raises(OrderRejected, b.market_order, "XXX_YYY", 1))
-b, sess = oanda(FakeResp(500, {}), FakeResp(201, fill_resp))
-check("oanda order: a 500 on POST is NEVER retried (could double-fill)", raises(BrokerError, b.market_order, "EUR_USD", 1000) and len(sess.calls) == 1)
-b, sess = oanda(requests.Timeout("slow"), FakeResp(201, fill_resp))
-check("oanda order: a timeout on POST is NEVER retried either", raises(BrokerError, b.market_order, "EUR_USD", 1000) and len(sess.calls) == 1)
-b, sess = oanda(FakeResp(503, {}), requests.ConnectionError("blip"), FakeResp(200, {"account": {"NAV": "5"}}))
-check("oanda reads: GET retries through a 503 and a connection error, then succeeds", close(b.equity(), 5) and len(sess.calls) == 3)
-b, sess = oanda(FakeResp(500, {}), FakeResp(500, {}), FakeResp(500, {}))
-check("oanda reads: gives up after 3 failed GET attempts", raises(BrokerError, b.equity) and len(sess.calls) == 3)
-b, _ = oanda(FakeResp(200, bad_json=True))
-check("oanda: non-JSON response -> BrokerError, not a crash", raises(BrokerError, b.equity))
-
-b, sess = oanda(FakeResp(200, {"position": {"long": {"units": "3000"}, "short": {"units": "0"}}}),
-                FakeResp(200, {"longOrderFillTransaction": {"id": "90", "orderID": "89", "time": "2025-01-01T03:00:00Z",
-                                                           "units": "-3000", "price": "1.1050", "pl": "12.5"}}))
-cf = b.close_position("EUR_USD")
-check("oanda close: long position closed with {longUnits: ALL} via PUT",
-      sess.calls[1]["method"] == "PUT" and sess.calls[1]["json"] == {"longUnits": "ALL"} and sess.calls[1]["url"].endswith("/positions/EUR_USD/close"))
-check("oanda close: realised P&L parsed from the fill", close(cf.pl, 12.5) and cf.units == -3000)
-b, sess = oanda(FakeResp(200, {"position": {"long": {"units": "0"}, "short": {"units": "-800"}}}),
-                FakeResp(200, {"shortOrderFillTransaction": {"id": "91", "time": "2025-01-01T03:00:00Z", "units": "800", "price": "1.1", "pl": "-3"}}))
-b.close_position("EUR_USD")
-check("oanda close: short position closed with {shortUnits: ALL}", sess.calls[1]["json"] == {"shortUnits": "ALL"})
-b, sess = oanda(FakeResp(200, {"position": {"long": {"units": "0"}, "short": {"units": "0"}}}))
-check("oanda close: flat -> returns None and sends no close request", b.close_position("EUR_USD") is None and len(sess.calls) == 1)
 
 # =========================== ALPACA ADAPTER (fake HTTP session) ===========================
 from datetime import datetime, timezone
@@ -628,13 +612,47 @@ check("alpaca close: already flat -> None, nothing else sent", b.close_position(
 b, sess = alpaca(FakeResp(200, {"qty": "10", "side": "long", "avg_entry_price": "450"}), CLOSED)
 check("alpaca close: market closed -> MarketClosed, no DELETE sent",
       raises(MarketClosed, b.close_position, "SPY") and all(c["method"] == "GET" for c in sess.calls))
+# ---- safety behaviours carried over from the earlier forex-adapter tests, now checked on Alpaca ----
+import inspect
+b, sess = alpaca()
+check("alpaca candles: count outside 1..9000 rejected before any HTTP call",
+      raises(BrokerError, b.candles, "SPY", "H1", 9001) and raises(BrokerError, b.candles, "SPY", "H1", 0) and len(sess.calls) == 0)
+b, sess = alpaca()
+check("alpaca order: zero units rejected before any HTTP call", raises(ValueError, b.market_order, "SPY", 0) and len(sess.calls) == 0)
+b, _ = alpaca(FakeResp(200, bad_json=True))
+check("alpaca: non-JSON response -> BrokerError, not a crash", raises(BrokerError, b.equity))
+b, _ = alpaca(FakeResp(401, {"message": "forbidden"}))
+try:
+    b.equity(); kind = "no error"
+except OrderRejected:
+    kind = "OrderRejected"
+except BrokerError as e:
+    kind = "BrokerError" if "forbidden" in str(e) else "BrokerError without the server message"
+check("alpaca reads: HTTP 401 (bad keys) -> BrokerError carrying the server's message, not an order rejection", kind == "BrokerError", f"({kind})")
+b, sess = alpaca(OPEN, requests.Timeout("slow"), FakeResp(200, order_obj("accepted")))
+check("alpaca order: a timeout on POST is NEVER retried either", raises(BrokerError, b.market_order, "SPY", 10) and len(sess.calls) == 2)
+b, sess = alpaca(FakeResp(503, {}), requests.ConnectionError("blip"), FakeResp(200, {"equity": "5"}))
+check("alpaca reads: GET retries through a 503 and a connection error, then succeeds", close(b.equity(), 5) and len(sess.calls) == 3)
+b, sess = alpaca(FakeResp(500, {}), FakeResp(500, {}), FakeResp(500, {}))
+check("alpaca reads: gives up after 3 failed GET attempts", raises(BrokerError, b.equity) and len(sess.calls) == 3)
+b, sess = alpaca(FakeResp(200, {"equity": "1"}), OPEN, FakeResp(200, {"quote": {"bp": 1.0, "ap": 2.0}}), FakeResp(200, {"bars": []}))
+b.equity(); b.quote("SPY"); b.candles("SPY", "H1", 5)
+check("alpaca: only the PAPER trading host and the data host are ever contacted",
+      all(c["url"].startswith(("https://paper-api.alpaca.markets/", "https://data.alpaca.markets/")) for c in sess.calls))
+check("alpaca: there is no constructor option to point the adapter at a live host",
+      not ({"host", "base_url", "base", "url", "live", "paper"} & set(inspect.signature(AlpacaBroker.__init__).parameters)))
+check("alpaca: API keys travel in headers only, never in a URL or query string",
+      all("KEY" not in c["url"] and "SECRET" not in str(c["params"]) for c in sess.calls))
 bb = build_broker(Settings(broker="alpaca", alpaca_key_id="k", alpaca_secret_key="s"))
 check("build_broker wires up the Alpaca adapter", bb.name == "alpaca")
 
 # IBKR adapter: safety guards only (no gateway available offline)
-from broker_ibkr import IbkrBroker
-check("ibkr: live ports 7496 / 4001 refused before any connection attempt",
-      all(raises(BrokerError, IbkrBroker, "127.0.0.1", p) for p in (7496, 4001)))
+if (HERE / "broker_ibkr.py").exists():
+    from broker_ibkr import IbkrBroker
+    check("ibkr: live ports 7496 / 4001 refused before any connection attempt",
+          all(raises(BrokerError, IbkrBroker, "127.0.0.1", p) for p in (7496, 4001)))
+else:
+    print("[SKIP] ibkr: broker_ibkr.py is not in this folder (the IBKR adapter is optional)")
 
 # =========================== BACKTEST ===========================
 check("stats: total return, hand-checked (100 -> 99 = -1%)", close(performance_stats([100, 110, 99], 100)["total_return"], -0.01, 1e-12))
