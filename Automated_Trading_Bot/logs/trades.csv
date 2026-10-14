@@ -1,0 +1,2 @@
+ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized_pl,equity,reason,order_id,broker
+2026-10-11T12:38:52+00:00,2026-10-09T20:00:00+00:00,SKIP,SPY,1,,,,,,,market closed,,alpaca
