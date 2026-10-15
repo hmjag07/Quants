@@ -1,0 +1,3 @@
+ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized_pl,equity,reason,order_id,broker
+2026-10-11T12:38:52+00:00,2026-10-09T20:00:00+00:00,SKIP,SPY,1,,,,,,,market closed,,alpaca
+2026-10-15T15:01:41+00:00,2026-10-15T14:00:00+00:00,ENTRY,SPY,-1,101,769.33,774.1,759.29,,99999.78,signal,9a7b4c82-e1f6-45b9-a177-e67d3d06835a,alpaca
