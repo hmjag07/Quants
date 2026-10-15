@@ -1,4 +1,19 @@
-# Options Pricing Model
+# Quants
+
+Quantitative-finance projects, built from scratch and tested properly. Each project lives in its own folder; this page explains all of them.
+
+| # | Project | What it is | Status |
+|---|---|---|---|
+| 1 | [Options Pricing Model](#project-1-options-pricing-model) · `Options_Pricing_Model/` | Prices options with a formula, a simulation and real market data, and checks they agree | Core library done · real-market validation in progress |
+| 2 | [Automated Trading Bot](#project-2-automated-trading-bot) · `Automated_Trading_Bot/` | A paper-trading bot running live on a cloud server, with risk controls and public logs | **Live since 15 Oct 2026** (paper money) |
+| 3 | ML Stock Prediction | ARIMA baseline vs. LSTM, walk-forward validated | Planned |
+| 4 | DSA Financial Simulator | Graph and dynamic-programming routines applied to order routing | Planned |
+
+> *Educational projects, not investment advice. The trading bot uses paper (simulated) money only.*
+
+---
+
+## Project 1: Options Pricing Model
 
 **Pricing options three ways (formula, simulation, market data) and checking that they agree.**
 
@@ -9,7 +24,7 @@
 
 ---
 
-## What this project does
+### What this project does
 
 An **option** is a contract whose value depends on where a stock ends up. This project answers three questions about it:
 
@@ -21,7 +36,7 @@ Everything is written in Python (NumPy, SciPy, pandas, Matplotlib) and covered b
 
 
 
-## The ideas
+### The ideas
 
 **What is an option?**
 A *call option* is the right (not the obligation) to buy a stock at a fixed price **K** (the *strike*) on a fixed date **T** (the *expiry*). If the stock ends above K you profit; if it ends below, you simply walk away and lose only what you paid for the option. A *put* is the mirror image: the right to *sell* at K.
@@ -53,7 +68,7 @@ Dials that tell you how the option's price responds to the world changing:
 
 ---
 
-## Quick start
+### Quick start
 
 ```bash
 git clone https://github.com/hmjag07/Quants.git
@@ -78,7 +93,7 @@ python make_figures.py      # regenerates every image in /images
 
 ---
 
-## What's inside
+### What's inside
 
 All files sit in one folder and import each other.
 
@@ -97,7 +112,7 @@ All files sit in one folder and import each other.
 
 ---
 
-## Results you can reproduce
+### Results you can reproduce
 
 **Black–Scholes benchmark** (stock = strike = 100, rate 5%, volatility 20%, 1 year):
 
@@ -127,9 +142,9 @@ These match a hand calculation, and a textbook example from Hull (S=42, K=40, r=
 
 ---
 
-## How it works
+### How it works
 
-### 1. The stock model
+#### 1. The stock model
 
 The stock follows geometric Brownian motion:
 
@@ -141,7 +156,7 @@ $$S_T = S_0 \exp\!\Big[\big(r - \tfrac{1}{2}\sigma^2\big)T + \sigma\sqrt{T}\,Z\B
 
 (For pricing, the drift $\mu$ is replaced by the risk-free rate $r$. That is *risk-neutral valuation*.)
 
-### 2. Two prices that must agree
+#### 2. Two prices that must agree
 
 **Closed form:**
 
@@ -151,14 +166,14 @@ $$C = S\,N(d_1) - K e^{-rT} N(d_2),\qquad d_1=\frac{\ln(S/K)+(r+\tfrac12\sigma^2
 
 $$C \approx e^{-rT}\,\frac{1}{N}\sum_{i=1}^{N}\max(S_T^{(i)}-K,\,0),\qquad \text{standard error}=\frac{s}{\sqrt N}$$
 
-### 3. Variance reduction (better accuracy for free)
+#### 3. Variance reduction (better accuracy for free)
 
 - **Antithetic variates:** for every random draw, also use its mirror image. The two results partly cancel each other's luck.
 - **Control variate:** the stock's *expected* final price is known exactly. Use that known quantity to correct for how lucky or unlucky the simulation was.
 
 Both are implemented in `mc_engine.py`. `python mc_engine.py` prints the standard error for plain, antithetic, control-variate and combined versions side by side.
 
-### 4. The Greeks, three independent ways
+#### 4. The Greeks, three independent ways
 
 | Method | Idea | Why include it |
 |---|---|---|
@@ -168,7 +183,7 @@ Both are implemented in `mc_engine.py`. `python mc_engine.py` prints the standar
 
 One detail worth knowing: **gamma needs a different estimator.** A call's payoff has a sharp corner at the strike, so differentiating along each path twice gives zero (wrong). The likelihood-ratio method fixes this by differentiating the probability instead of the payoff.
 
-### 5. Comparing with the real market
+#### 5. Comparing with the real market
 
 Backwards from a market price you can ask: *which volatility would make Black–Scholes match this price?* That is the **implied volatility**, found by root-finding. If Black–Scholes were perfectly right, every strike would give the same implied volatility. In real markets they do not: options far from the current price (especially out-of-the-money puts on indices) typically show **higher** implied volatility, a pattern called the **volatility smile** (or *skew*).
 
@@ -180,7 +195,7 @@ The practical consequence: a single-volatility model fits well **near the money*
 
 ---
 
-## Use your own market data
+### Use your own market data
 
 Download an option chain (for example NSE's option-chain page or F&O bhavcopy) as a CSV. The loader recognises NSE-style column names (`StrkPric`, `OptnTp` with `CE`/`PE`, `ClsPric`) as well as simple `strike, option, market_price` files.
 
@@ -206,7 +221,7 @@ print(summarize(detail).round(2).to_string(index=False))
 
 ---
 
-## How it is tested
+### How it is tested
 
 Three suites (125 checks) print PASS/FAIL per check and exit with an error if anything fails. They test against **independent references**, not just against themselves:
 
@@ -218,7 +233,7 @@ Three suites (125 checks) print PASS/FAIL per check and exit with an error if an
 
 ---
 
-## What I learned
+### What I learned
 
 - **Test your tests.** Three of my own expected values were wrong at first (a butterfly's maximum profit, the exactness of put-call parity in a *finite* sample, and a price filter that correctly removed nothing). The fix each time was to work out *why*, not to loosen a tolerance.
 - **A Monte Carlo price needs an error bar.** The number alone says nothing about how much to trust it.
@@ -227,25 +242,197 @@ Three suites (125 checks) print PASS/FAIL per check and exit with an error if an
 
 ---
 
-## Limitations
+### Limitations
 
 - European options only (no early exercise); no discrete dividends.
 - Constant volatility and constant interest rate: no smile, no stochastic volatility.
 - Market validation depends on the quote source, the closing-price timing and the chosen risk-free rate; closing prices of illiquid strikes can be stale.
 
-## Possible extensions
+### Possible extensions
 
 Local-volatility or Heston model fitted to the smile · American options (binomial tree, Longstaff–Schwartz) · path-dependent payoffs (Asian, barrier) using the same engine · delta-hedging simulation.
 
 ---
 
-## References
+### References
 
 - Black & Scholes (1973), *The Pricing of Options and Corporate Liabilities*, Journal of Political Economy
 - Merton (1973), *Theory of Rational Option Pricing*, Bell Journal of Economics
 - Hull, *Options, Futures, and Other Derivatives*
 - Glasserman (2004), *Monte Carlo Methods in Financial Engineering*
 - Cvitanić, *Pricing Options with Mathematical Models* (CaltechX BEM1105x lecture series)
+
+
+---
+
+## Project 2: Automated Trading Bot
+
+**A paper-trading bot that follows a simple trend strategy on US ETF prices through the Alpaca API, sizes every trade from a fixed risk budget, and writes an auditable log of everything it does.**
+
+![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-185-brightgreen) ![Paper trading](https://img.shields.io/badge/money-paper%20only-lightgrey)
+
+> **Status:** deployed and running on an AWS server since 15 Oct 2026 · live results fill in below as data accumulates
+> *Paper trading only. Educational project, not investment advice.*
+
+### What this project does
+
+A trading bot is easy to write and hard to trust. This project is about the trust part. It answers three questions:
+
+1. **What should the bot hold right now?** A simple trend rule (moving averages plus momentum) gives a target: long, short or flat.
+2. **How much, and what if it is wrong?** Every trade risks a fixed 0.5% of the account, with a stop-loss and a profit target attached to the order, plus a daily-loss kill switch.
+3. **Can anyone verify what it did?** Every order, skip and halt is written to a CSV log that is pushed to this repo every hour.
+
+The strategy is deliberately plain. The point is a pipeline that is safe, restartable and testable. It is **not** claimed to have an edge.
+
+### Live forward test
+
+| | |
+|---|---|
+| Account | Alpaca paper account (simulated money) |
+| Instrument / bars | SPY (S&P 500 ETF), hourly candles |
+| Started | 15 Oct 2026 |
+| Runs on | AWS EC2 (Sydney), restarted automatically by `systemd` if it crashes |
+| Logs | [`bot-logs` branch](https://github.com/hmjag07/Quants/tree/bot-logs): `equity_curve.csv` and `trades.csv`, updated hourly |
+
+Results, calculated from the live log and compared with simply holding SPY over the same dates:
+
+| Days running | Return | Buy-and-hold SPY | Max drawdown | Sharpe | Trades |
+|---|---|---|---|---|---|
+| pending | pending | pending | pending | pending | pending |
+
+A forward test needs weeks of data before the numbers mean anything, so none are quoted yet. They will be filled from `equity_curve.csv`, **never** from a backtest.
+
+### The strategy
+
+```
+target = +1 (long)   if fast SMA > slow SMA  and  momentum > 0
+         -1 (short)  if fast SMA < slow SMA  and  momentum < 0
+          0 (flat)   otherwise, including while the indicators warm up
+```
+
+Defaults: 20 / 50-bar simple moving averages, 10-bar momentum, 14-bar ATR (average true range, a measure of how far the price typically moves per bar). The strategy outputs a **target position**, not "buy" and "sell" events. That one choice makes restarts safe: after a crash the bot recomputes the same target and compares it with what the broker really holds.
+
+### Risk controls
+
+- **Position size:** `units = equity × 0.5% ÷ (2 × ATR)`, rounded down, then capped by a unit limit and by a leverage limit (no leverage by default).
+- **Exits:** a stop-loss at 2 ATR and a profit target at twice that distance, both attached to the entry order at the broker.
+- **Daily-loss kill switch:** if equity drops 2% from the day's start, the bot closes everything and stops entering until the next day.
+- **Error halt:** after 5 failed cycles in a row it tries to flatten the position and exits.
+- **Config guard:** the settings validator refuses live trading endpoints and any risk above 5% per trade, so a typo in `.env` cannot send real money.
+
+### How it works
+
+```mermaid
+flowchart LR
+    BR["Broker (Alpaca paper)"] -- "candles, quote, equity, position" --> BOT
+    BOT["bot.py<br/>one cycle per bar"] -- "price history" --> STR["strategy.py<br/>SMA + momentum + ATR"]
+    STR -- "target: +1 / 0 / -1" --> BOT
+    BOT -- "equity, ATR" --> RISK["risk.py<br/>sizing, stops, kill switch"]
+    RISK -- "units, stop, target" --> BOT
+    BOT -- "market order + stop/target" --> BR
+    BOT --> LOG["trade_logger.py<br/>trades.csv, equity_curve.csv"]
+    BOT --> ST["bot_state.json<br/>last bar, blocked direction, day-start equity"]
+```
+
+One cycle, once per completed bar:
+
+1. Fetch the latest completed candles. If the newest bar was already handled, do nothing.
+2. If the position has vanished since last time, the broker's stop or target fired. Log it and block re-entering in the same direction.
+3. Compute the strategy's target position.
+4. Apply the safety rules (daily-loss halt, no instant re-entry after a stop-out).
+5. **Reconcile:** compare the target with the broker's real position and close and/or open to match.
+6. Log equity and save state.
+
+### Design decisions
+
+| Decision | Why |
+|---|---|
+| Strategy returns a target position, not trade events | After a restart the bot cannot double-trade; it just reconciles |
+| Order requests are never automatically retried | A timeout can hide an order that actually filled; retrying could double the position. The next cycle re-reads the real position instead |
+| Market closed is a skip, not an error | Otherwise every night and weekend would count toward the 5-error halt |
+| A failed close never lets the bot open the opposite side | Prevents accidentally holding two positions |
+| No re-entry in the same direction after a stop or target exit until the signal changes | Otherwise a stopped-out trade reopens on the next bar |
+| The backtest runs the real `Bot.step` | A separate backtest loop could disagree with live behaviour on sizing, stops or halts |
+| State is written atomically; a corrupt file falls back to a clean state | A crash mid-write cannot brick the bot |
+
+### Quick start
+
+```bash
+git clone https://github.com/hmjag07/Quants.git
+cd Quants/Automated_Trading_Bot
+
+python -m venv .venv
+# Windows (PowerShell):  .venv\Scripts\Activate.ps1
+# macOS / Linux:         source .venv/bin/activate
+
+pip install -r requirements.txt
+```
+
+1. Create a free [Alpaca](https://alpaca.markets) **paper** account and generate API keys.
+2. Copy `env.example` to `.env` and fill in `ALPACA_KEY_ID` and `ALPACA_SECRET_KEY`. Never commit `.env`.
+3. Run the checks, then test the connection, then run one cycle:
+
+```bash
+python verify_working.py      # 185 offline checks, no network needed
+python test_connection.py --broker alpaca
+python bot.py --once          # one cycle, then exit
+python bot.py                 # run continuously
+python backtest.py            # replay the real bot code on synthetic prices
+```
+
+The bot only trades during US market hours; outside them it logs `SKIP: market closed` and waits.
+
+### What's inside
+
+| File | What it does |
+|---|---|
+| `config.py` | Reads settings from `.env`, validates them, refuses live trading |
+| `strategy.py` | Indicators and the target-position rule |
+| `risk.py` | Position sizing, stop and target levels, daily-loss check |
+| `bot.py` | The per-bar cycle, state saving, run loop, error handling |
+| `broker_base.py` | The common broker interface that every adapter implements |
+| `broker_alpaca.py` | Alpaca paper-trading adapter (the one running live) |
+| `broker_paper.py` | Simulated broker for backtests and offline tests |
+| `broker_oanda.py`, `broker_ibkr.py` | Early adapters for OANDA and Interactive Brokers; tested offline only, not used |
+| `trade_logger.py` | Append-only CSV logs |
+| `backtest.py` | Replays prices through the real `Bot.step` |
+| `test_connection.py` | Read-only credential and network check |
+| `verify_working.py` | The automated test suite |
+
+### Log files
+
+- `trades.csv`: one row per event: `ENTRY`, `EXIT`, `REJECTED`, `SKIP` or `HALT`, with side, units, price, stop, target, equity and the reason.
+- `equity_curve.csv`: equity and position after every bar. Sharpe ratio and drawdown are computed from this file.
+
+### How it is tested
+
+`verify_working.py` runs **185 offline checks** and exits with an error if any fail. They cover position sizing, stop and target levels, the kill switch, restart and reconciliation behaviour, a look-ahead check (the strategy must give the same answer whether or not future bars exist), and the safety refusals (live endpoints, oversized risk).
+
+I also **broke the code on purpose** (mutation testing: removing a stop, flipping a sign, disabling the kill switch) to confirm the tests fail when they should.
+
+The backtest uses synthetic prices. It checks that the mechanics are right, and it is not used to claim returns.
+
+### What I learned
+
+- **A pretty total can hide a broken statistic.** My first backtest showed a +29% return but a profit factor of 0.45, because trades closed by stops and targets were not counted. Trade statistics now come from the broker's fill records.
+- **A test that cannot fail proves nothing.** My kill-switch test used a loss of 0.86% against a 1% limit, so it passed whether or not the switch worked. A bigger drop plus a negative control fixed it.
+- **A closed market is not an error.** Treating it as one would trip the error halt every night.
+- **Linux file names are case-sensitive.** `Config.py` imports fine on Windows and fails on the server, so the test file now checks file names first.
+- **A broker's free data has limits.** Alpaca's free IEX feed covers only part of US volume, so I trade a liquid ETF.
+
+### Limitations
+
+- **Exits executed by the broker (stop or target) are logged without price or P&L.** The bot only learns that the position disappeared. Equity in `equity_curve.csv` is the reliable record until these are reconciled from the broker's transaction history.
+- The backtest fills at the bar's close plus half a spread, with no slippage or financing costs, and runs on synthetic data.
+- A single instrument and a single plain strategy: this is a trustworthy pipeline, not a proven edge.
+- Paper fills are optimistic compared with real markets.
+- The OANDA and IBKR adapters have never run against live endpoints.
+
+### Possible extensions
+
+Stops calibrated with Value-at-Risk · Sharpe ratio and drawdown reported from the live record · a 90-day backtest on real historical data shown next to the live results · reconciling broker-side exits from the transaction history · latency measurement and API batching.
+
+---
 
 ## Author
 
