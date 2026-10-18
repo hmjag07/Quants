@@ -6,8 +6,8 @@ Quantitative-finance projects, built from scratch and tested properly. Each proj
 |---|---|---|---|
 | 1 | [Options Pricing Model](#project-1-options-pricing-model) · `Options_Pricing_Model/` | Prices options with a formula, a simulation and real market data, and checks they agree | Core library done · real-market validation in progress |
 | 2 | [Automated Trading Bot](#project-2-automated-trading-bot) · `Automated_Trading_Bot/` | A paper-trading bot running live on a cloud server, with risk controls and public logs | **Live since 15 Oct 2026** (paper money) |
-| 3 | ML Stock Prediction | ARIMA baseline vs. LSTM, walk-forward validated | Planned |
-| 4 | DSA Financial Simulator | Graph and dynamic-programming routines applied to order routing | Planned |
+| 3 | [DSA Financial Simulator](#project-3-dsa-financial-simulator) · `DSA_Financial_Simulator/` | Dijkstra order routing and a dynamic-programming allocator on a 500-venue network, in C++ | Core done and tested · benchmark below |
+| 4 | ML Stock Prediction | ARIMA baseline vs. LSTM, walk-forward validated | Planned |
 
 > *Educational projects, not investment advice. The trading bot uses paper (simulated) money only.*
 
@@ -431,6 +431,109 @@ The backtest uses synthetic prices. It checks that the mechanics are right, and 
 ### Possible extensions
 
 Stops calibrated with Value-at-Risk · Sharpe ratio and drawdown reported from the live record · a 90-day backtest on real historical data shown next to the live results · reconciling broker-side exits from the transaction history · latency measurement and API batching.
+
+---
+
+## Project 3: DSA Financial Simulator
+
+**Graph and dynamic-programming algorithms applied to a trading problem: find the cheapest route for an order across a network of venues, then split a budget across assets. Written in C++ and benchmarked against a plain textbook baseline.**
+
+![C++](https://img.shields.io/badge/C%2B%2B-17-blue) ![Tests](https://img.shields.io/badge/automated%20checks-54-brightgreen)
+
+> **Status:** core complete and tested · benchmark numbers below were measured on my own machine
+> *Synthetic data, educational project, not investment advice.*
+
+### What this project does
+
+1. **Route.** A network of 500 trading venues, where every directed link has a cost in basis points (fees, half-spread, impact). **Dijkstra's algorithm** finds the cheapest way to get an order from the cash venue to any other venue.
+2. **Allocate.** Given those routing costs, a **dynamic program** splits a budget of lots across assets to maximise total net value, with diminishing returns and fixed ticket fees.
+3. **Prove it.** Every algorithm is checked against an independent reference, and the optimised code is timed against a baseline on identical inputs.
+
+### The ideas
+
+**Why Dijkstra?** Routing an order through several venues is a shortest-path problem: each hop adds a cost, and you want the cheapest total. Dijkstra finishes the nearest venue first, then the next nearest, and so on. It needs every cost to be zero or positive, so the code rejects negative costs when it builds the graph.
+
+**Why dynamic programming and not "just buy the best lot first"?** For asset *i*, holding *k* lots is worth
+
+```
+value(i, k) = k × (alpha_i − routing_cost_i) − ½ × lambda_i × k² − fixed_i      (k ≥ 1)
+value(i, 0) = 0
+```
+
+`alpha` is the expected edge per lot, `routing_cost` comes from the Dijkstra step, `lambda` penalises large size (impact, risk), and `fixed` is a one-off ticket fee. A greedy rule that keeps adding the best next lot is optimal only when returns always diminish. With a fixed fee the first lot can lose money while the second makes it back, and greedy never starts such a position. DP considers every split. The tests contain exactly that trap: DP finds a value of 10, greedy only 1.5.
+
+### Quick start
+
+```bash
+git clone https://github.com/hmjag07/Quants.git
+cd Quants/DSA_Financial_Simulator
+
+g++ -std=c++17 -O2 -Wall -Wextra -o verify_simulator verify_simulator.cpp
+g++ -std=c++17 -O2 -Wall -Wextra -o simulator simulator.cpp
+g++ -std=c++17 -O2 -o benchmark benchmark.cpp
+
+./verify_simulator     # 54 checks
+./simulator            # demo: route + allocation
+./benchmark            # baseline vs optimised timings
+```
+
+On Windows use `.\verify_simulator.exe`, and so on. `simulator` accepts `--nodes`, `--assets`, `--lots`, `--maxlots`, `--degree` and `--seed`.
+
+### What's inside
+
+| File | What it does |
+|---|---|
+| `network.hpp` | The venue network (compact CSR storage), a seeded random generator that gives the same network on every compiler |
+| `routing.hpp` | Dijkstra two ways (plain O(V²) baseline, binary-heap optimised), Bellman-Ford as an independent cross-check, path reconstruction |
+| `portfolio_dp.hpp` | The allocation DP three ways (hash-memo baseline, rolling-array optimised, full table with the chosen lots), plus brute force and greedy for the tests |
+| `pipeline.hpp` | Joins routing and allocation: route costs become the value tables the DP optimises |
+| `simulator.cpp` | Demo program |
+| `benchmark.cpp` | Timing harness: median of 9 runs, outputs checked identical, prints a table |
+| `verify_simulator.cpp` | The automated test suite |
+
+### Results
+
+Baseline = O(V²) array Dijkstra and a hash-memoised top-down DP. Optimised = heap Dijkstra and a bottom-up rolling-array DP. Both give identical outputs on every run (checked inside the benchmark). Median of 9 runs, compiled with `-O2`.
+
+| Benchmark | Work per run | Baseline | Optimised | Speed-up | Time cut |
+|---|---|---|---|---|---|
+| Routing, 500 venues | 200 full route solves | 40.03 ms | 11.78 ms | 3.4x | 71% |
+| Routing, 2000 venues | 40 full route solves | 112.91 ms | 12.64 ms | 8.9x | 89% |
+| Routing, 5000 venues | 10 full route solves | 184.78 ms | 9.10 ms | 20.3x | 95% |
+| DP, 30 assets, 300 lots | 20 allocations | 27.04 ms | 1.92 ms | 14.1x | 93% |
+| Full pipeline, 500 venues | 100 ticks (route + allocate) | 143.83 ms | 16.63 ms | 8.7x | 88% |
+The speed-up is measured against my own deliberately plain baseline, not against a production library. It grows with network size because the baseline scans every venue on every step.
+
+### How it is tested
+
+`verify_simulator` runs **54 checks** and exits with an error if any fail:
+
+- hand-worked examples, including a textbook shortest-path graph and an allocation worked out by hand
+- the array, heap and Bellman-Ford routing algorithms must agree on 300 random graphs, which include zero-cost edges, parallel edges and unreachable venues
+- an optimality certificate: no edge can still improve any distance
+- every reconstructed path must use real edges and cost exactly the reported distance
+- the DP must match brute force on 300 small random instances, including negative values
+- bottom-up, rolling and top-down DP must agree, and greedy must equal DP when every asset is concave
+- properties: a bigger budget never lowers the optimum, and dearer routing never raises it
+
+The suite also runs clean under AddressSanitizer and UndefinedBehaviorSanitizer. I **broke the code on purpose** 14 ways (a max-heap, a missing reverse edge, an off-by-one in the DP, greedy buying losing lots, and so on) and the tests caught every real fault.
+
+### What I learned
+
+- **My own tests found a real bug.** I reversed a path by assigning a vector from its own reverse iterators, which is undefined behaviour. The path checks failed immediately.
+- **A hang is also a failure.** Relaxing with `<=` instead of `<` loops forever on zero-cost cycles, which only a test with zero-cost edges can reveal.
+- **Random number distributions differ between compilers.** I wrote a small seeded generator so the same seed builds the same network everywhere.
+- **A speed-up needs a stated baseline.** "Faster" means nothing without "than what", and without checking that the outputs are identical.
+
+### Limitations
+
+- Costs are synthetic and not calibrated to any market. Hop costs are additive and do not depend on order size.
+- There is no order matching at each venue, only the routing and allocation layers.
+- Single-threaded; the baseline is a textbook implementation, so the speed-ups describe the gap to that baseline.
+
+### Possible extensions
+
+Size-dependent edge costs · an order-book matching engine at each venue · splitting one order across several routes (k-shortest paths) · detecting arbitrage with Bellman-Ford on log exchange rates · parallel routing.
 
 ---
 
