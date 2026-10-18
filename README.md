@@ -7,7 +7,7 @@ Quantitative-finance projects, built from scratch and tested properly. Each proj
 | 1 | [Options Pricing Model](#project-1-options-pricing-model) · `Options_Pricing_Model/` | Prices options with a formula, a simulation and real market data, and checks they agree | Core library done · real-market validation in progress |
 | 2 | [Automated Trading Bot](#project-2-automated-trading-bot) · `Automated_Trading_Bot/` | A paper-trading bot running live on a cloud server, with risk controls and public logs | **Live since 15 Oct 2026** (paper money) |
 | 3 | [DSA Financial Simulator](#project-3-dsa-financial-simulator) · `DSA_Financial_Simulator/` | Dijkstra order routing and a dynamic-programming allocator on a 500-venue network, in C++ | Core done and tested · benchmark below |
-| 4 | ML Stock Prediction | ARIMA baseline vs. LSTM, walk-forward validated | Planned |
+| 4 | [ML Stock Prediction](#project-4-ml-stock-prediction) · `ML_Stock_Prediction/` | Walk-forward test of an LSTM against ARIMA and simple baselines on 20 NSE stocks | Done · **result: no edge over the baselines** |
 
 > *Educational projects, not investment advice. The trading bot uses paper (simulated) money only.*
 
@@ -534,6 +534,117 @@ The suite also runs clean under AddressSanitizer and UndefinedBehaviorSanitizer.
 ### Possible extensions
 
 Size-dependent edge costs · an order-book matching engine at each venue · splitting one order across several routes (k-shortest paths) · detecting arbitrage with Bellman-Ford on log exchange rates · parallel routing.
+
+---
+
+## Project 4: ML Stock Prediction
+
+**Can an LSTM predict the next day's return of NSE stocks better than ARIMA? A strict out-of-sample test with honest baselines, proper statistics, and tests that prove the pipeline cannot cheat.**
+
+![Python](https://img.shields.io/badge/Python-3.9%2B-blue) ![TensorFlow](https://img.shields.io/badge/TensorFlow-LSTM-orange) ![Tests](https://img.shields.io/badge/automated%20checks-52-brightgreen)
+
+> **Headline result:** no. On a held-out year (238 trading days, 20 stocks) the LSTM is statistically indistinguishable from ARIMA, and **predicting "no change" is the most accurate forecast of all.** That is the normal finding for daily returns, and the interesting part of the project is how carefully it was established.
+> *Educational project, not investment advice.*
+
+### What this project does
+
+1. **Data.** About 5 years (1 Oct 2021 to 16 Oct 2026) of daily adjusted prices for 20 large NSE stocks in 5 sectors (banks, IT, FMCG, auto, energy) plus the NIFTY 50 index, from Yahoo Finance.
+2. **Features.** For each stock and day: the last 5 daily returns, 5/20/60-day momentum, 5/20-day rolling volatility, 20-day momentum relative to its sector and to the index, the index's own return and volatility, and a volume z-score. Everything uses data up to that day's close only.
+3. **Target.** The stock's **next-day log return**.
+4. **Models.** Predict zero (the random walk), the stock's running average return, **ARIMA** (one per stock, re-estimated every 21 days), **Ridge** regression on the same features, and an **LSTM** trained on all stocks together (once on returns alone, once on all features; the final prediction averages 5 random seeds).
+5. **Judge.** The last 20% of days (30 Oct 2025 to 15 Oct 2026) is touched only once, at the end.
+
+### Why next-day returns, not prices
+
+A one-step price forecast has error `price × (predicted return − actual return)`, so comparing return forecasts is the same comparison as comparing one-step price forecasts, without price level inflating the numbers. A model that "tracks the price closely" on a price chart usually just repeats yesterday's price; the zero-return baseline captures exactly that.
+
+### Results
+
+Test period 30 Oct 2025 to 15 Oct 2026, 20 stocks, 4,760 forecasts. RMSE is the typical size of the error in the next-day return, in percent.
+
+| Model | RMSE (%) | MAE (%) | Direction acc. (%) | vs ARIMA RMSE (%) | 95% CI | DM p |
+|---|---|---|---|---|---|---|
+| Zero (random walk) | 1.552 | 1.115 | - | +0.4 | [+0.1, +0.6] | 0.011 |
+| Expanding mean | 1.555 | 1.117 | 49.8 | +0.2 | [+0.1, +0.3] | 0.020 |
+| ARIMA | 1.558 | 1.120 | 50.2 | - | - | - |
+| Ridge | 1.555 | 1.118 | 48.4 | +0.2 | [-0.1, +0.5] | 0.297 |
+| LSTM (returns only) | 1.557 | 1.120 | 48.1 | +0.0 | [-0.2, +0.3] | 0.904 |
+| LSTM (engineered features) | 1.558 | 1.120 | 48.8 | -0.0 | [-0.4, +0.4] | 0.955 |
+
+Single LSTM seeds (test RMSE %): 1.562, 1.566, 1.557, 1.561, 1.555. The table uses the average of the five.
+
+![Results](images/ml_results.png)
+
+**Reading it.**
+
+- The LSTM with engineered features has **-0.0% RMSE relative to ARIMA** (95% interval -0.4% to +0.4%, Diebold-Mariano p = 0.955): no difference.
+- **Predicting zero beats ARIMA** (+0.4%, p = 0.011). Fitting ARIMA to the past adds noise rather than signal.
+- Direction accuracy is about 50% or below for every model (the best is ARIMA at 50.2%), so there is no directional edge either.
+- The right-hand chart shows the LSTM ahead of ARIMA until January 2026, behind it from February to April, and back near level since. A single window of a few months would have supported either story. This is why the whole year, an interval and a significance test are reported rather than a favourable stretch.
+- The seeds differ by up to 0.011 percentage points, as much as the differences between models, so one lucky seed could fake a "win".
+
+### How the comparison is kept fair
+
+- **Walk-forward by date, never shuffled.** Train 60% of days, validate 20%, test 20%. The scaler is fitted on training days only. Validation data picks the LSTM size and stops training early; the test period is never used for any decision.
+- **ARIMA gets the same courtesy.** Its order is chosen on training data only, and each forecast uses returns up to that day and nothing later.
+- **Statistics are done per day, not per stock-day.** Stocks on the same day move together, so treating all 4,760 forecasts as independent would overstate certainty. The Diebold-Mariano test uses day-level errors with a Newey-West correction for autocorrelation, and the confidence interval is a block bootstrap over days.
+- **A linear model is included.** Ridge shows whether the LSTM adds anything beyond a straight line on the same features. It does not.
+
+### Quick start
+
+```bash
+cd Quants/ML_Stock_Prediction
+pip install -r requirements.txt            # TensorFlow needs Python 3.9 to 3.13
+
+python verify_ml.py                        # 46 quick checks, about 5 seconds
+python data.py --start 2021-10-01 --out prices.csv       # needs internet
+python run_experiment.py --prices prices.csv            # 10 to 25 minutes
+```
+
+`python verify_ml.py --full` adds two end-to-end runs on synthetic data (about 6 minutes). `python run_experiment.py --synthetic --signal 0` runs the pipeline on pure noise. Results land in `results/`.
+
+### What's inside
+
+| File | What it does |
+|---|---|
+| `data.py` | Downloads and cleans the prices (rejects duplicates and bad prices, handles gaps) |
+| `features.py` | Builds the features and the next-day target, using past data only |
+| `baselines.py` | Zero, running mean, ARIMA walk-forward, Ridge |
+| `lstm_model.py` | Windowing, training-only scaling, the LSTM, seed ensembling |
+| `evaluate.py` | RMSE, MAE, direction accuracy, Diebold-Mariano test, block bootstrap |
+| `run_experiment.py` | The whole experiment and the report |
+| `synthetic.py` | Fake data for testing the pipeline, with or without a planted signal |
+| `verify_ml.py` | The automated checks |
+
+### How it is tested
+
+`verify_ml.py` runs **46 quick checks** (52 with `--full`):
+
+- **No look-ahead.** Deleting the future must not change any past feature or ARIMA forecast, and corrupting later prices must not change earlier features. The same tests also confirm that changes to *past* data do move the results, so the tests can fail.
+- Every feature value is recomputed by hand for a sample stock and day; the target must be the next day's return; each LSTM window must be the last 20 days ending on the right day.
+- The scaler and the LSTM's training and validation tensors must not change when the test period is wrecked.
+- RMSE, MAE, direction accuracy, the Diebold-Mariano test (including its false-positive rate on equal models and on autocorrelated data) and the bootstrap are checked against hand calculations.
+- **The pipeline must find nothing in noise but must find a real effect.** On synthetic returns with no predictability, no model shows a significant edge over predicting zero. With a deliberately planted effect, the engineered-feature models beat ARIMA with an interval clearly above zero, while ARIMA and the returns-only LSTM cannot see it. So the null result on real data is a finding about the market, not a broken pipeline.
+
+I also **broke the code on purpose** (features that peek one day ahead, ARIMA that sees one future observation, a scaler fitted on the test period, a statistical test without its autocorrelation correction) and tightened the tests until each one was caught.
+
+### What I learned
+
+- **The honest answer can be "nothing".** The natural hope is an LSTM that beats ARIMA by a clear margin. The proper test says there is no such margin, and a good evaluation has to be willing to report that.
+- **The baseline matters more than the model.** "Predict zero" beat ARIMA. Without it, any model that merely tracks yesterday's price looks impressive.
+- **Seeds can fake a result.** Five identical LSTMs differ by as much as the gaps between models, so the answer cannot depend on a single run.
+- **A test is only worth anything if it can fail.** Several of my first tests passed against deliberately broken code, which showed they were too weak.
+
+### Limitations
+
+- **Survivorship bias.** The 20 stocks are today's large caps; companies that fell out of the index are not in the data.
+- **One test year, 238 days.** The test is only sensitive to differences of roughly half a percent in RMSE. A smaller real effect would not be detected.
+- Daily horizon, no transaction costs, no trading rule. A small forecast edge could still matter or fail to matter once costs are included, and this project does not test that.
+- Only one LSTM design family with a small tuning grid (16, 32 or 64 units).
+
+### Possible extensions
+
+A longer history (10 years) for more power · predicting direction or volatility instead of returns, where there is more structure · cross-sectional ranking of stocks instead of forecasting each one · a transformer or gradient-boosted trees as the model · adding a trading rule with costs.
 
 ---
 
