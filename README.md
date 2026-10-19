@@ -4,7 +4,7 @@ Quantitative-finance projects, built from scratch and tested properly. Each proj
 
 | # | Project | What it is | Status |
 |---|---|---|---|
-| 1 | [Options Pricing Model](#project-1-options-pricing-model) · `Options_Pricing_Model/` | Prices options with a formula, a simulation and real market data, and checks they agree | Core library done · real-market validation in progress |
+| 1 | [Options Pricing Model](#project-1-options-pricing-model) · `Options_Pricing_Model/` | Prices options with a formula, a simulation and real market data, and checks they agree | Core library done · validated against live NIFTY option prices |
 | 2 | [Automated Trading Bot](#project-2-automated-trading-bot) · `Automated_Trading_Bot/` | A paper-trading bot running live on a cloud server, with risk controls and public logs | **Live since 15 Oct 2026** (paper money) |
 | 3 | [DSA Financial Simulator](#project-3-dsa-financial-simulator) · `DSA_Financial_Simulator/` | Dijkstra order routing and a dynamic-programming allocator on a 500-venue network, in C++ | Core done and tested · benchmark below |
 | 4 | [ML Stock Prediction](#project-4-ml-stock-prediction) · `ML_Stock_Prediction/` | Walk-forward test of an LSTM against ARIMA and simple baselines on 20 NSE stocks | Done · **result: no edge over the baselines** |
@@ -19,7 +19,7 @@ Quantitative-finance projects, built from scratch and tested properly. Each proj
 
 ![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-195-brightgreen)
 
-> **Status:** core library complete and tested · validation on real NSE option prices in progress
+> **Status:** core library complete and tested · validated against a live NIFTY option chain (19 Oct 2026)
 > *Educational project, not investment advice.*
 
 ---
@@ -139,8 +139,27 @@ These match a hand calculation, and a textbook example from Hull (S=42, K=40, r=
 
 **Speed:** the vectorised engine is far faster than the loop version. Run `python mc_engine.py` to see the speed-up on your machine; the benchmark prints loop time, vectorised time and the ratio.
 
-<!-- TODO (add after running on real data): a short "Real-market validation" section with
-     your data source, date, expiry and the table printed by summarize(). -->
+### Real-market validation (NIFTY index options)
+
+- **Data:** NSE option-chain page, expiry 23 Nov 2026, quotes as of 19 Oct 2026 12:16 IST.
+- **Prices used:** bid/ask midpoint (last traded price where no valid quote). Out-of-the-money options only; premiums below 1 point excluded. 112 options in total.
+- **Inputs:** time to expiry 35.1 days, risk-free rate 6.25%, forward 23,059.48 inferred from put-call parity.
+- **Fit:** one flat volatility of **13.81%**, fitted to options within 5% of the forward.
+
+Error of the flat-volatility Black-Scholes price against the market price, by distance from the forward, where |ln(K/F)| is that distance:
+
+| \|ln(K/F)\| bucket | n | mean abs % err | median abs % err | % within 5% | mean abs IV gap (vol pts) |
+|---|---|---|---|---|---|
+| 0.00 to 0.03 | 28 | 7.9 | 6.9 | 39.3 | 0.6 |
+| 0.03 to 0.07 | 36 | 34.2 | 31.7 | 0.0 | 1.7 |
+| 0.07 to 0.15 | 48 | 68.0 | 79.1 | 2.1 | 4.3 |
+
+![Volatility smile and pricing error](images/nse_iv_smile.png)
+
+In this sample the implied volatility sits 0.6 vol points from the flat fit near the forward and 4.3 points away in the farthest bucket, so a single volatility fits close to the forward and degrades in the wings, consistent with a volatility smile.
+Percentage errors look large for cheap out-of-the-money options even when the volatility gap is small, which is why the gap in volatility points is shown too. These numbers come from one expiry on one day; quote timing and stale prices on quiet strikes affect them.
+
+**What the picture shows.** The market is not flat-volatility: implied volatility is highest on far downside puts (about 23%), falls to roughly 12.6% just above the forward and rises again on far calls (about 17%). This lopsided shape (a *skew*) is typical for equity-index options, because investors pay extra for crash protection. A single volatility of 13.8% matches the options close to the forward but prices far out-of-the-money puts at a small fraction of their market price, which is why the right-hand chart falls towards -100%. Even in the nearest bucket the mean error is 7.9%, since those premiums are small and a flat volatility cannot follow the curvature.
 
 ---
 
