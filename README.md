@@ -17,7 +17,7 @@ Quantitative-finance projects, built from scratch and tested properly. Each proj
 
 **Pricing options three ways (formula, simulation, market data) and checking that they agree.**
 
-![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-125-brightgreen)
+![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-195-brightgreen)
 
 > **Status:** core library complete and tested · validation on real NSE option prices in progress
 > *Educational project, not investment advice.*
@@ -32,7 +32,7 @@ An **option** is a contract whose value depends on where a stock ends up. This p
 2. **How does that value react when things change?** I compute the "Greeks" (delta, gamma, vega, theta, rho) three independent ways.
 3. **Does the model match the real market?** I compare model prices with traded option prices and measure *where* the model is accurate and where it breaks.
 
-Everything is written in Python (NumPy, SciPy, pandas, Matplotlib) and covered by **125 automated checks**.
+Everything is written in Python (NumPy, SciPy, pandas, Matplotlib) and covered by **195 automated checks**.
 
 
 
@@ -86,9 +86,10 @@ Try it:
 ```bash
 python black_scholes.py     # prices an at-the-money call and put
 python greeks.py            # Greeks three ways, side by side
-python Mc_Engine.py         # speed benchmark + variance-reduction table
-python Market_Validation.py # demo on a synthetic option chain
+python mc_engine.py         # speed benchmark + variance-reduction table
+python market_validation.py # demo on a synthetic option chain
 python make_figures.py      # regenerates every image in /images
+python nse_validation.py --csv my_chain.csv --expiry 2026-10-27 --asof "2026-10-19 15:15"   # real NSE chain
 ```
 
 ---
@@ -103,12 +104,13 @@ All files sit in one folder and import each other.
 | `bonds.py` | Discounting, zero-coupon and coupon bond prices, forward pricing, put-call parity check |
 | `black_scholes.py` | The closed-form call/put pricer (plus a version with no SciPy, to cross-check the maths) |
 | `monte_carlo.py` | Simulates stock paths: a deliberately slow loop version, and a vectorised one |
-| `Mc_Engine.py` | Fast Monte Carlo pricer with variance reduction and a speed benchmark |
+| `mc_engine.py` | Fast Monte Carlo pricer with variance reduction and a speed benchmark |
 | `greeks.py` | Delta, gamma, vega, theta, rho: formula, finite-difference, and Monte Carlo |
-| `Market_Validation.py` | Implied volatility, calibration, loading real option chains, error by moneyness |
+| `market_validation.py` | Implied volatility, calibration, loading real option chains, error by moneyness |
 | `explore.py` | Notebook-style cells (run in VS Code) for plotting and experimenting |
-| `Make_Figures.py` | Generates the figures in this README |
-| `Verify_until_greeks.py` | The automated test suite |
+| `nse_validation.py` | Validates Black–Scholes on a real NSE option chain: parity forward, OTM-only, flat-vol fit, error and implied-vol gap by moneyness |
+| `make_figures.py` | Generates the figures in this README |
+| `verify_week1.py`, `Verify_until_greeks.py`, `verify_monte_carlo.py`, `verify_nse_validation.py` | The automated test suites |
 
 ---
 
@@ -223,7 +225,7 @@ print(summarize(detail).round(2).to_string(index=False))
 
 ### How it is tested
 
-Three suites (125 checks) print PASS/FAIL per check and exit with an error if anything fails. They test against **independent references**, not just against themselves:
+Four suites (195 checks: 36 + 71 + 18 for the core library, 70 for the NSE validation) print PASS/FAIL per check and exit with an error if anything fails. They test against **independent references**, not just against themselves:
 
 - hand-calculated values and textbook examples
 - structural identities: put-call parity, `delta_call − delta_put = 1`, equal gamma and vega for calls and puts
@@ -269,7 +271,7 @@ Local-volatility or Heston model fitted to the smile · American options (binomi
 
 **A paper-trading bot that follows a simple trend strategy on US ETF prices through the Alpaca API, sizes every trade from a fixed risk budget, and writes an auditable log of everything it does.**
 
-![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-185-brightgreen) ![Paper trading](https://img.shields.io/badge/money-paper%20only-lightgrey)
+![Python](https://img.shields.io/badge/python-3.12-blue) ![Tests](https://img.shields.io/badge/automated%20checks-164-brightgreen) ![Paper trading](https://img.shields.io/badge/money-paper%20only-lightgrey)
 
 > **Status:** deployed and running on an AWS server since 15 Oct 2026 · live results fill in below as data accumulates
 > *Paper trading only. Educational project, not investment advice.*
@@ -381,11 +383,11 @@ pip install -r requirements.txt
 3. Run the checks, then test the connection, then run one cycle:
 
 ```bash
-python verify_working.py      # 185 offline checks, no network needed
+python verify_working.py      # 164 offline checks, no network needed
 python test_connection.py --broker alpaca
 python bot.py --once          # one cycle, then exit
 python bot.py                 # run continuously
-python backtest.py            # replay the real bot code on synthetic prices
+python backtest.py --synthetic  # replay the real bot code on synthetic prices
 ```
 
 The bot only trades during US market hours; outside them it logs `SKIP: market closed` and waits.
@@ -401,10 +403,10 @@ The bot only trades during US market hours; outside them it logs `SKIP: market c
 | `broker_base.py` | The common broker interface that every adapter implements |
 | `broker_alpaca.py` | Alpaca paper-trading adapter (the one running live) |
 | `broker_paper.py` | Simulated broker for backtests and offline tests |
-| `broker_oanda.py`, `broker_ibkr.py` | Early adapters for OANDA and Interactive Brokers; tested offline only, not used |
 | `trade_logger.py` | Append-only CSV logs |
 | `backtest.py` | Replays prices through the real `Bot.step` |
 | `test_connection.py` | Read-only credential and network check |
+| `env.example` | Template for your `.env` settings file |
 | `verify_working.py` | The automated test suite |
 
 ### Log files
@@ -414,7 +416,7 @@ The bot only trades during US market hours; outside them it logs `SKIP: market c
 
 ### How it is tested
 
-`verify_working.py` runs **185 offline checks** and exits with an error if any fail. They cover position sizing, stop and target levels, the kill switch, restart and reconciliation behaviour, a look-ahead check (the strategy must give the same answer whether or not future bars exist), and the safety refusals (live endpoints, oversized risk).
+`verify_working.py` runs **164 offline checks** and exits with an error if any fail. They cover position sizing, stop and target levels, the kill switch, restart and reconciliation behaviour, a look-ahead check (the strategy must give the same answer whether or not future bars exist), and the safety refusals (live endpoints, oversized risk).
 
 I also **broke the code on purpose** (mutation testing: removing a stop, flipping a sign, disabling the kill switch) to confirm the tests fail when they should.
 
@@ -434,7 +436,7 @@ The backtest uses synthetic prices. It checks that the mechanics are right, and 
 - The backtest fills at the bar's close plus half a spread, with no slippage or financing costs, and runs on synthetic data.
 - A single instrument and a single plain strategy: this is a trustworthy pipeline, not a proven edge.
 - Paper fills are optimistic compared with real markets.
-- The OANDA and IBKR adapters have never run against live endpoints.
+- Only the Alpaca adapter is included. `config.py` and `bot.py` keep hooks for OANDA and Interactive Brokers adapters (OANDA does not open accounts for Indian residents, which is why the bot moved to Alpaca), but those adapter files are not part of this repo.
 
 ### Possible extensions
 

@@ -231,18 +231,28 @@ class Bot:
 
 
 # ---------------------------------------------------------------------- wiring
+def _optional_adapter(module, cls):
+    """OANDA and IBKR adapters are optional extras that are not part of this repo. Without the file, say so
+    clearly instead of failing with a bare ImportError."""
+    try:
+        return getattr(__import__(module), cls)
+    except ModuleNotFoundError as e:
+        if e.name != module:
+            raise                                           # the adapter exists but one of ITS imports is missing
+        raise SystemExit(f"{module}.py is not included in this repository (only the Alpaca adapter is). "
+                         "Use BROKER=alpaca, or backtest.py for offline runs.")
+
+
 def build_broker(s: Settings) -> Broker:
     if s.broker == "alpaca":
         from broker_alpaca import AlpacaBroker
         return AlpacaBroker(s.alpaca_key_id, s.alpaca_secret_key, s.alpaca_feed)
     if s.broker == "oanda":
-        from broker_oanda import OandaBroker
-        return OandaBroker(s.oanda_token, s.oanda_account_id, s.oanda_env)
+        return _optional_adapter("broker_oanda", "OandaBroker")(s.oanda_token, s.oanda_account_id, s.oanda_env)
     if s.broker == "ibkr":
-        from broker_ibkr import IbkrBroker
-        return IbkrBroker(s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
+        return _optional_adapter("broker_ibkr", "IbkrBroker")(s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
     raise SystemExit("BROKER=paper has no live data feed. Use backtest.py for the paper broker, "
-                     "or set BROKER=alpaca / oanda / ibkr.")
+                     "or set BROKER=alpaca.")
 
 
 def setup_logging(log_dir):

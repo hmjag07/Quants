@@ -119,7 +119,8 @@ def main():
     elif args.csv:
         bars, s = load_csv(args.csv), Settings.from_env()
     else:
-        from broker_oanda import OandaBroker
+        from bot import _optional_adapter
+        OandaBroker = _optional_adapter("broker_oanda", "OandaBroker")
         s = Settings.from_env()
         bars = OandaBroker(s.oanda_token, s.oanda_account_id, s.oanda_env).candles(
             s.instrument, s.granularity, min(args.count, 5000))

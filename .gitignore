@@ -8,3 +8,7 @@ __pycache__/
 # API keys and broker credentials must NEVER be committed
 secrets/
 *.key
+
+# compiled binaries (build them from source; see README)
+*.exe
+*.out

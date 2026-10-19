@@ -14,7 +14,7 @@
       "name": "Python: verify_week1",
       "type": "debugpy",
       "request": "launch",
-      "program": "${workspaceFolder}/week1/verify_week1.py",
+      "program": "${workspaceFolder}/Options_Pricing_Model/verify_week1.py",
       "console": "integratedTerminal"
     }
   ]

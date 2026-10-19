@@ -7,9 +7,9 @@ import matplotlib.pyplot as plt
 
 from payoffs import plot_all
 from greeks import plot_greeks
-from Mc_Engine import price_vectorized
+from mc_engine import price_vectorized
 from black_scholes import bs_price
-from Market_Validation import make_demo_chain, implied_vol
+from market_validation import make_demo_chain, implied_vol
 
 os.makedirs("images", exist_ok=True)
 
