@@ -324,7 +324,7 @@ Defaults: 20 / 50-bar simple moving averages, 10-bar momentum, 14-bar ATR (avera
 
 ```mermaid
 flowchart LR
-    BR["Broker (Alpaca paper)"] -- "candles, quote, equity, position" --> BOT
+    BR["Broker (Alpaca paper)"] ----- "candles, quote, equity, position" --> BOT
     BOT["bot.py<br/>one cycle per bar"] -- "price history" --> STR["strategy.py<br/>SMA + momentum + ATR"]
     STR -- "target: +1 / 0 / -1" --> BOT
     BOT -- "equity, ATR" --> RISK["risk.py<br/>sizing, stops, kill switch"]
