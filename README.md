@@ -323,15 +323,23 @@ Defaults: 20 / 50-bar simple moving averages, 10-bar momentum, 14-bar ATR (avera
 ### How it works
 
 ```mermaid
-flowchart LR
-    BR["Broker (Alpaca paper)"] -- "candles, quote, equity, position" --> BOT
-    BOT["bot.py<br/>one cycle per bar"] -- "price history" --> STR["strategy.py<br/>SMA + momentum + ATR"]
-    STR -- "target: +1 / 0 / -1" --> BOT
-    BOT -- "equity, ATR" --> RISK["risk.py<br/>sizing, stops, kill switch"]
-    RISK -- "units, stop, target" --> BOT
-    BOT -- "market order + stop/target" --> BR
-    BOT --> LOG["trade_logger.py<br/>trades.csv, equity_curve.csv"]
-    BOT --> ST["bot_state.json<br/>last bar, blocked direction, day-start equity"]
+flowchart TB
+    BR[("Alpaca paper broker")]
+
+    subgraph CYCLE["bot.py · one cycle per completed bar"]
+        direction TB
+        S1["1 · Fetch data<br/>candles, quote, equity, position"]
+        S2["2 · strategy.py<br/>SMA + momentum → target +1 / 0 / −1"]
+        S3["3 · risk.py<br/>units, stop, target, kill switch"]
+        S4["4 · Reconcile<br/>target vs. real position"]
+        S1 --> S2 --> S3 --> S4
+    end
+
+    BR --> S1
+    S4 -- "market order + stop / target" --> BR
+
+    S4 --> LOG["trade_logger.py<br/>trades.csv · equity_curve.csv"]
+    S4 --> ST["bot_state.json<br/>last bar · blocked direction · day-start equity"]
 ```
 
 One cycle, once per completed bar:
