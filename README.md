@@ -139,6 +139,17 @@ These match a hand calculation, and a textbook example from Hull (S=42, K=40, r=
 
 **Speed:** the vectorised engine is far faster than the loop version. Run `python mc_engine.py` to see the speed-up on your machine; the benchmark prints loop time, vectorised time and the ratio.
 
+**Variance reduction, measured** (`python mc_engine.py`, fixed seed, 100,000 paths each; at-the-money call, S = K = 100, r = 5%, σ = 20%, T = 1 year; Black-Scholes price 10.4506):
+
+| Method | Price | Standard error | vs plain |
+|---|---|---|---|
+| Plain | 10.4362 | 0.0465 | 1.00x |
+| Antithetic | 10.4721 | 0.0329 | 0.71x |
+| Control variate | 10.4484 | 0.0178 | 0.38x |
+| Antithetic + control variate | 10.4577 | 0.0088 | 0.19x |
+
+Every estimate is within one standard error of the exact price. Using both techniques cuts the standard error by 81% at the same path count, which is the same accuracy as roughly 28 times more plain paths, because error shrinks as 1/√N. The convergence table in the same script confirms that error falls by about 10x for every 100x more paths (0.4462 at 1,000 paths to 0.0147 at 1,000,000).
+
 ### Real-market validation (NIFTY index options)
 
 - **Data:** NSE option-chain page, expiry 23 Nov 2026, quotes as of 19 Oct 2026 12:16 IST.
