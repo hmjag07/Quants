@@ -81,7 +81,7 @@ from backtest import make_synthetic_bars, performance_stats, run_backtest, trade
 from bot import Bot, StateStore, seconds_until_next_bar
 from broker_base import BrokerError, MarketClosed, OrderRejected
 from broker_paper import PaperBroker
-from config import ConfigError, Settings, load_dotenv
+from config import PROJECT_DIR, ConfigError, Settings, load_dotenv
 from risk import daily_loss_breached, position_size, price_decimals, stop_take_levels
 from strategy import StrategyParams, compute_indicators, latest_signal, target_series
 from trade_logger import TradeLogger
@@ -168,6 +168,94 @@ if _ex.exists():
           Settings.from_env(_vals).broker == "alpaca" and Settings.from_env(_vals).instrument == "SPY")
     check("shipped env.example has no trailing comments on value lines",
           all(" #" not in l for l in _ex.read_text().splitlines() if "=" in l and not l.lstrip().startswith("#")))
+# ---- finding the .env: from any working directory, in any text encoding, with a useful error when it is wrong ----
+def _isolated(fn):
+    """Run fn, then undo any os.environ changes load_dotenv made."""
+    saved = dict(os.environ)
+    try:
+        return fn()
+    finally:
+        os.environ.clear(); os.environ.update(saved)
+
+
+def _msg(fn):
+    try:
+        fn()
+    except ConfigError as e:
+        return str(e)
+    return ""
+
+
+cwd_dir, proj_dir, empty_dir = tmp / "cwd1", tmp / "proj1", tmp / "empty1"
+for d_ in (cwd_dir, proj_dir, empty_dir):
+    d_.mkdir()
+(proj_dir / ".env").write_text("ALPACA_KEY_ID=PKfromproj\nALPACA_SECRET_KEY=SECRETproj\n")
+find = lambda dirs: _isolated(lambda: load_dotenv(search_dirs=dirs, override=True))
+check("dotenv: finds the .env in the PROJECT folder even when you run from another directory (the reported bug)",
+      find([cwd_dir, proj_dir]).get("ALPACA_KEY_ID") == "PKfromproj")
+(cwd_dir / ".env").write_text("ALPACA_KEY_ID=PKfromcwd\n")
+check("dotenv: a .env in the current directory takes priority over the project one",
+      find([cwd_dir, proj_dir]).get("ALPACA_KEY_ID") == "PKfromcwd")
+check("dotenv: the same folder listed twice is read once, without error", find([proj_dir, proj_dir]).get("ALPACA_KEY_ID") == "PKfromproj")
+import config as _cfg
+
+
+def _from_directory(run_dir, project_dir):
+    """Call load_dotenv() with NO arguments, exactly as bot.py does, while 'standing in' run_dir, with the
+    project folder pointed at project_dir."""
+    old_cwd, old_proj = os.getcwd(), _cfg.PROJECT_DIR
+    saved = dict(os.environ)
+    for k in ("ALPACA_KEY_ID", "ALPACA_SECRET_KEY"):
+        os.environ.pop(k, None)
+    try:
+        os.chdir(run_dir); _cfg.PROJECT_DIR = Path(project_dir)
+        return _cfg.load_dotenv()
+    finally:
+        os.chdir(old_cwd); _cfg.PROJECT_DIR = old_proj
+        os.environ.clear(); os.environ.update(saved)
+
+
+(cwd_dir / ".env").unlink()                       # the 'Quants' parent folder: no .env here
+check("dotenv DEFAULT search: running from a parent folder still finds the project's .env (EXACTLY your bug)",
+      _from_directory(cwd_dir, proj_dir).get("ALPACA_KEY_ID") == "PKfromproj")
+check("dotenv DEFAULT search: running from inside the project folder works too",
+      _from_directory(proj_dir, proj_dir).get("ALPACA_KEY_ID") == "PKfromproj")
+(cwd_dir / ".env").write_text("ALPACA_KEY_ID=PKfromcwd\n")
+check("dotenv DEFAULT search: a .env in the current directory still wins", _from_directory(cwd_dir, proj_dir).get("ALPACA_KEY_ID") == "PKfromcwd")
+(cwd_dir / ".env").unlink()
+check("dotenv: no .env anywhere -> empty result, no crash", find([empty_dir]) == {})
+check("dotenv: an explicit path is honoured exactly", _isolated(lambda: load_dotenv(proj_dir / ".env", override=True)).get("ALPACA_KEY_ID") == "PKfromproj")
+
+enc_text = "BROKER=alpaca\nINSTRUMENT=SPY\n# caf\u00e9 note\nALPACA_KEY_ID=PKenc\n"
+for label, raw_bytes in (("UTF-8 with BOM (some editors)", b"\xef\xbb\xbf" + enc_text.encode("utf-8")),
+                         ("UTF-16 (PowerShell '>' redirection)", enc_text.encode("utf-16")),
+                         ("Windows ANSI / cp1252", enc_text.encode("cp1252"))):
+    (tmp / "enc.env").write_bytes(raw_bytes)
+    got = _isolated(lambda: load_dotenv(tmp / "enc.env", override=True))
+    check(f"dotenv: reads a .env saved as {label}",
+          got.get("BROKER") == "alpaca" and got.get("INSTRUMENT") == "SPY" and got.get("ALPACA_KEY_ID") == "PKenc", str(got))
+
+check("paths: relative LOG_DIR / STATE_FILE are anchored to the project folder, not the current directory",
+      Settings.from_env({"LOG_DIR": "logs", "STATE_FILE": "s.json"}, base_dir=tmp).log_dir == str(tmp / "logs")
+      and Settings.from_env({"STATE_FILE": "s.json"}, base_dir=tmp).state_file == str(tmp / "s.json"))
+check("paths: absolute paths are left alone", Settings.from_env({"LOG_DIR": str(tmp / "x")}, base_dir=tmp / "other").log_dir == str(tmp / "x"))
+check("paths: the defaults land inside the project folder",
+      Settings.from_env({}).log_dir == str(PROJECT_DIR / "logs") and Settings.from_env({}).state_file == str(PROJECT_DIR / "bot_state.json"))
+
+(tmp / "typo.env").write_text("BROKER=alpaca\nALPACA_API_KEY=SECRETVALUE123\nALPACA_SECRET_KEY=\n")
+_isolated(lambda: load_dotenv(tmp / "typo.env", override=True))
+m = _msg(lambda: Settings.from_env({"BROKER": "alpaca"}))
+check("error message: names exactly which settings are missing", "ALPACA_KEY_ID" in m and "ALPACA_SECRET_KEY" in m and "missing or empty" in m)
+check("error message: shows the .env path it read and the setting NAMES in it (spots a typo like ALPACA_API_KEY)",
+      "typo.env" in m and "ALPACA_API_KEY" in m)
+check("error message: flags an empty value", "ALPACA_SECRET_KEY (EMPTY)" in m)
+check("error message: NEVER prints a secret value", "SECRETVALUE123" not in m)
+(empty_dir / ".env.txt").write_text("BROKER=alpaca\n")
+find([empty_dir])
+m = _msg(lambda: Settings.from_env({"BROKER": "alpaca"}))
+check("error message: no .env found -> says so and lists the folders it searched", "No .env was found" in m and str(empty_dir) in m)
+check("error message: spots the classic Notepad '.env.txt' mistake", ".env.txt" in m and "rename" in m.lower())
+
 check("settings: alpaca broker without keys rejected", raises(ConfigError, Settings.from_env, {"BROKER": "alpaca"}))
 check("settings: alpaca broker with keys accepted",
       Settings.from_env({"BROKER": "alpaca", "ALPACA_KEY_ID": "k", "ALPACA_SECRET_KEY": "s"}).broker == "alpaca")
@@ -685,6 +773,66 @@ for r in bars.itertuples(index=False):
     bk.on_bar(r.time, r.open, r.high, r.low, r.close, r.volume); bt.step()
 check("backtest: balance == start + sum(realised P&L) over a full run", close(bk.balance, 100_000 + sum(f.pl for f in bk.fills), 1e-6))
 check("backtest: equity never negative, no NaNs", (res.equity.equity > 0).all() and res.equity.equity.notna().all())
+
+# ------------------------------------------------------------------ heartbeat (15-minute snapshots)
+import bot as _botmod
+from broker_base import MarketClosed as _MC, BrokerError as _BE
+from bot import next_heartbeat_ts
+
+check("heartbeat: next tick is the next wall-clock quarter hour, strictly after now",
+      next_heartbeat_ts(1000 * 900 + 1, 900) == 1001 * 900 and next_heartbeat_ts(1000 * 900, 900) == 1001 * 900)
+check("settings: HEARTBEAT_SECONDS default 900, 0 allowed, 30 refused",
+      Settings().heartbeat_seconds == 900 and Settings.from_env({"HEARTBEAT_SECONDS": "0"}).heartbeat_seconds == 0
+      and raises(ConfigError, Settings.from_env, {"HEARTBEAT_SECONDS": "30"}))
+
+
+class _Clock:
+    """Fake clock: sleeping just advances time, so a whole hour 'passes' instantly."""
+    def __init__(self, t): self.t = t
+    def time(self): return self.t
+
+
+def _run_wait(start, hb, bar_seconds=3600, fail=None):
+    pb = PaperBroker(100_000, 0.0001)
+    if fail == "closed":
+        pb.quote = lambda inst: (_ for _ in ()).throw(_MC("closed"))
+    if fail == "error":
+        pb.equity = lambda: (_ for _ in ()).throw(_BE("boom"))
+    lg = TradeLogger(None)
+    b = Bot(S(heartbeat_seconds=hb), pb, lg, StateStore(None))
+    b.s.__dict__["granularity"] = "H1"
+    clk = _Clock(start)
+    real_time, real_sleep = _botmod.time.time, b._sleep
+    _botmod.time.time = clk.time
+    b._sleep = lambda s: setattr(clk, "t", clk.t + s)
+    try:
+        b._wait_for_next_bar()
+    finally:
+        _botmod.time.time = real_time
+    return b, lg, clk
+
+
+# start 14:20 UTC on the hour grid -> heartbeats at 14:30, 14:45, 15:00; the next bar is due 15:00:05
+base = 1_700_000_000 // 3600 * 3600 + 14 * 0          # an exact hour boundary
+b1, lg1, clk1 = _run_wait(base + 20 * 60, 900)
+check("heartbeat: 3 snapshots (:30, :45, :00) fit between a bar at :20 and the next bar", len(lg1.heartbeat_rows) == 3,
+      f"({len(lg1.heartbeat_rows)})")
+check("heartbeat: waiting ends exactly when the next bar is due (5 s after the boundary)", abs(clk1.t - (base + 3605)) < 1e-6)
+check("heartbeat: snapshot holds equity and position", lg1.heartbeat_rows[0]["equity"] == 100000 and lg1.heartbeat_rows[0]["position_units"] == 0)
+b2, lg2, _ = _run_wait(base + 20 * 60, 0)
+check("heartbeat: HEARTBEAT_SECONDS=0 -> no snapshots, same wait", len(lg2.heartbeat_rows) == 0)
+b3, lg3, _ = _run_wait(base + 20 * 60, 900, fail="closed")
+check("heartbeat: market closed -> row written with blank bid/ask and a note, not a crash",
+      len(lg3.heartbeat_rows) == 3 and lg3.heartbeat_rows[0]["note"] == "market_closed" and lg3.heartbeat_rows[0]["bid"] == ""
+      and lg3.heartbeat_rows[0]["equity"] == 100000)
+b4, lg4, clk4 = _run_wait(base + 20 * 60, 900, fail="error")
+check("heartbeat: broker error -> logged as a gap, waiting still completes", len(lg4.heartbeat_rows) == 3
+      and lg4.heartbeat_rows[0]["note"].startswith("error") and abs(clk4.t - (base + 3605)) < 1e-6)
+check("heartbeat: never changes bot state (observation only)", b1.state == StateStore(None).load())
+_hd = Path(tempfile.mkdtemp())
+_l = TradeLogger(_hd); _l.log_heartbeat(1.0, 0, 1.0, 1.1, "", ""); _l.log_heartbeat(2.0, 1, None, None, "", "market_closed")
+_rows = (_hd / "heartbeat.csv").read_text().strip().splitlines()
+check("heartbeat: csv has one header and one line per snapshot", len(_rows) == 3 and _rows[0].startswith("ts_utc,equity"))
 
 print(f"\n{sum(results)}/{len(results)} checks passed")
 sys.exit(0 if all(results) else 1)

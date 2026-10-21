@@ -27,6 +27,11 @@ def seconds_until_next_bar(now_ts, bar_seconds, delay=5):
     return max(0.0, next_boundary + delay - now_ts)
 
 
+def next_heartbeat_ts(now_ts, interval):
+    """Next wall-clock multiple of `interval` seconds strictly after `now_ts` (900 -> :00, :15, :30, :45)."""
+    return (int(now_ts) // interval + 1) * interval
+
+
 @dataclass
 class BotState:
     last_bar_time: str = ""        # ISO time of the last bar we acted on
@@ -205,14 +210,55 @@ class Bot:
         while not self._stop and time.time() < end:
             time.sleep(min(1.0, end - time.time()))
 
+    # ------------------------------------------------------------------ heartbeat (observation only)
+    def heartbeat(self):
+        """Log equity, position and quote. Never trades, never touches bot state, never raises."""
+        eq = pos = bid = ask = None
+        note = ""
+        try:
+            eq = self.broker.equity()
+            pos = self.broker.position(self.s.instrument)
+            try:
+                bid, ask = self.broker.quote(self.s.instrument)
+            except MarketClosed:
+                note = "market_closed"
+        except Exception as e:                                  # a failed snapshot must never stop trading
+            note = f"error: {type(e).__name__}"
+            log.warning("heartbeat failed: %s", e)
+        try:
+            self.tlog.log_heartbeat(eq, pos, bid, ask, self.state.last_bar_time, note)
+        except Exception:
+            log.exception("could not write heartbeat")
+
+    def _wait_for_next_bar(self):
+        """Sleep until the next bar is due, writing a heartbeat at each wall-clock multiple of the interval."""
+        hb = self.s.heartbeat_seconds
+        target = time.time() + seconds_until_next_bar(time.time(), self.s.bar_seconds)
+        floor_ts = time.time()
+        while not self._stop:
+            now = time.time()
+            if now >= target:
+                return
+            nxt = next_heartbeat_ts(max(now, floor_ts), hb) if hb else None
+            if nxt is None or nxt >= target:
+                self._sleep(target - now)
+                return
+            self._sleep(nxt - now)
+            if self._stop:
+                return
+            self.heartbeat()
+            floor_ts = nxt
+
     def run_forever(self):
         signal.signal(signal.SIGINT, self.request_stop)
         signal.signal(signal.SIGTERM, self.request_stop)
         log.info("bot started | %s %s | broker=%s", self.s.instrument, self.s.granularity, self.broker.name)
+        if self.s.heartbeat_seconds:
+            self.heartbeat()                                    # proves the monitoring works right at startup
         while not self._stop:
             try:
                 self.step()
-                self._sleep(seconds_until_next_bar(time.time(), self.s.bar_seconds))
+                self._wait_for_next_bar()
             except (BrokerError, OSError, ValueError) as e:
                 self.state.consecutive_errors += 1
                 self.store.save(self.state)
@@ -231,28 +277,18 @@ class Bot:
 
 
 # ---------------------------------------------------------------------- wiring
-def _optional_adapter(module, cls):
-    """OANDA and IBKR adapters are optional extras that are not part of this repo. Without the file, say so
-    clearly instead of failing with a bare ImportError."""
-    try:
-        return getattr(__import__(module), cls)
-    except ModuleNotFoundError as e:
-        if e.name != module:
-            raise                                           # the adapter exists but one of ITS imports is missing
-        raise SystemExit(f"{module}.py is not included in this repository (only the Alpaca adapter is). "
-                         "Use BROKER=alpaca, or backtest.py for offline runs.")
-
-
 def build_broker(s: Settings) -> Broker:
     if s.broker == "alpaca":
         from broker_alpaca import AlpacaBroker
         return AlpacaBroker(s.alpaca_key_id, s.alpaca_secret_key, s.alpaca_feed)
     if s.broker == "oanda":
-        return _optional_adapter("broker_oanda", "OandaBroker")(s.oanda_token, s.oanda_account_id, s.oanda_env)
+        from broker_oanda import OandaBroker
+        return OandaBroker(s.oanda_token, s.oanda_account_id, s.oanda_env)
     if s.broker == "ibkr":
-        return _optional_adapter("broker_ibkr", "IbkrBroker")(s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
+        from broker_ibkr import IbkrBroker
+        return IbkrBroker(s.ibkr_host, s.ibkr_port, s.ibkr_client_id)
     raise SystemExit("BROKER=paper has no live data feed. Use backtest.py for the paper broker, "
-                     "or set BROKER=alpaca.")
+                     "or set BROKER=alpaca / oanda / ibkr.")
 
 
 def setup_logging(log_dir):

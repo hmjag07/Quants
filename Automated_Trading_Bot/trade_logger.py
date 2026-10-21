@@ -7,12 +7,13 @@ import pandas as pd
 TRADE_FIELDS = ["ts_utc", "bar_time", "event", "instrument", "side", "units", "price", "stop_loss",
                 "take_profit", "realized_pl", "equity", "reason", "order_id", "broker"]
 EQUITY_FIELDS = ["ts_utc", "bar_time", "equity", "position_units", "close"]
+HEARTBEAT_FIELDS = ["ts_utc", "equity", "position_units", "bid", "ask", "last_bar_time", "note"]
 
 
 class TradeLogger:
     def __init__(self, log_dir="logs"):
         self.dir = Path(log_dir) if log_dir else None
-        self.trades, self.equity_rows = [], []
+        self.trades, self.equity_rows, self.heartbeat_rows = [], [], []
         if self.dir:
             self.dir.mkdir(parents=True, exist_ok=True)
 
@@ -44,6 +45,18 @@ class TradeLogger:
         self.equity_rows.append(row)
         if self.dir:
             self._append("equity_curve.csv", EQUITY_FIELDS, row)
+        return row
+
+    def log_heartbeat(self, equity, position_units, bid, ask, last_bar_time, note=""):
+        """Read-only snapshot between bars. Blank cells mean 'not available' (see `note`)."""
+        def num(x, nd):
+            return "" if x is None else round(float(x), nd)
+        row = {"ts_utc": self._now(), "equity": num(equity, 4),
+               "position_units": "" if position_units is None else int(position_units),
+               "bid": num(bid, 6), "ask": num(ask, 6), "last_bar_time": last_bar_time, "note": note}
+        self.heartbeat_rows.append(row)
+        if self.dir:
+            self._append("heartbeat.csv", HEARTBEAT_FIELDS, row)
         return row
 
     def trades_frame(self):

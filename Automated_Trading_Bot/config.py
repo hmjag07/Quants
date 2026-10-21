@@ -24,22 +24,75 @@ def _parse_env_value(raw):
     return re.split(r"\s+#", raw, maxsplit=1)[0].strip()
 
 
-def load_dotenv(path=".env", override=False):
-    """Minimal .env reader (KEY=VALUE per line, # comments, optional quotes). No extra dependency."""
-    p = Path(path)
-    if not p.exists():
-        return {}
-    loaded = {}
-    for line in p.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#") or "=" not in line:
+PROJECT_DIR = Path(__file__).resolve().parent         # the folder this project lives in (where bot.py is)
+_ENV_REPORT = {"checked": [], "loaded_from": None, "keys": {}, "dirs": []}
+
+
+def _read_text_any(path):
+    """Read a text file whatever way an editor saved it: UTF-8, UTF-8 with BOM, UTF-16 (PowerShell's '>'), or ANSI."""
+    data = Path(path).read_bytes()
+    if data.startswith((b"\xff\xfe", b"\xfe\xff")):
+        return data.decode("utf-16")
+    try:
+        return data.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        return data.decode("cp1252", errors="replace")
+
+
+def load_dotenv(path=None, override=False, search_dirs=None):
+    """
+    Minimal .env reader (KEY=VALUE per line, # comments, optional quotes). No extra dependency.
+
+    With no `path`, looks for `.env` in the folder you ran the command from AND in the project folder
+    (where this file lives), so `python Automated_Trading_Bot/bot.py` works from any directory.
+    The first one found is used. Returns the parsed {name: value}.
+    """
+    if path is not None:
+        candidates = [Path(path)]
+    else:
+        dirs = search_dirs if search_dirs is not None else [Path.cwd(), PROJECT_DIR]
+        candidates, seen = [], set()
+        for d in dirs:
+            key = str(Path(d).resolve())
+            if key not in seen:
+                seen.add(key)
+                candidates.append(Path(d) / ".env")
+    _ENV_REPORT.update({"checked": [(str(p), p.exists()) for p in candidates], "loaded_from": None,
+                        "keys": {}, "dirs": [str(p.parent) for p in candidates]})
+    for p in candidates:
+        if not p.exists():
             continue
-        key, _, value = line.partition("=")
-        key, value = key.strip(), _parse_env_value(value)
-        loaded[key] = value
-        if override or key not in os.environ:
-            os.environ[key] = value
-    return loaded
+        loaded = {}
+        for line in _read_text_any(p).splitlines():
+            line = line.strip().lstrip("\ufeff")
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key, value = key.strip(), _parse_env_value(value)
+            loaded[key] = value
+            if override or key not in os.environ:
+                os.environ[key] = value
+        _ENV_REPORT["loaded_from"] = str(p)
+        _ENV_REPORT["keys"] = {k: bool(v) for k, v in loaded.items()}
+        return loaded
+    return {}
+
+
+def _env_help():
+    """Plain-language diagnosis for a missing-credentials error. Prints setting NAMES only, never values."""
+    r = _ENV_REPORT
+    lines = [".env files checked:"]
+    lines += [f"    {p}  ->  {'found' if ok else 'not found'}" for p, ok in r["checked"]] or ["    (none: an explicit path was not given)"]
+    if r["loaded_from"]:
+        names = ", ".join(f"{n}{'' if filled else ' (EMPTY)'}" for n, filled in sorted(r["keys"].items())) or "none"
+        lines.append(f"  Setting names read from {r['loaded_from']}:  {names}")
+        lines.append("  Check that the names are spelt exactly as in env.example and that no value is empty.")
+    else:
+        lines.append("  No .env was found. Create a file named exactly .env in the project folder (the one containing bot.py).")
+        for d in r["dirs"]:
+            if (Path(d) / ".env.txt").exists():
+                lines.append(f"  Found '.env.txt' in {d}: the file must be named exactly '.env' (Notepad adds .txt). Rename it.")
+    return "\n".join(lines)
 
 
 @dataclass
@@ -61,6 +114,7 @@ class Settings:
     max_leverage: float = 1.0             # notional position value <= equity x this (1.0 = no leverage)
     max_daily_loss: float = 0.02          # halt for the UTC day after losing 2% of day-start equity
     max_consecutive_errors: int = 5
+    heartbeat_seconds: int = 900          # read-only equity/position/quote snapshot between bars; 0 = off
     # --- data / paths ---
     lookback_bars: int = 300
     log_dir: str = "logs"
@@ -82,8 +136,12 @@ class Settings:
     ibkr_client_id: int = 1
 
     @classmethod
-    def from_env(cls, env=None):
-        """Build Settings from environment variables named after the fields, upper-cased."""
+    def from_env(cls, env=None, base_dir=None):
+        """
+        Build Settings from environment variables named after the fields, upper-cased.
+        Relative LOG_DIR / STATE_FILE are anchored to the project folder (not the current directory), so logs
+        and bot state always land in the same place however you launch the bot.
+        """
         env = os.environ if env is None else env
         kwargs = {}
         for f in fields(cls):
@@ -95,10 +153,17 @@ class Settings:
             except (TypeError, ValueError):
                 raise ConfigError(f"{f.name.upper()}={raw!r} is not a valid {f.type.__name__}")
         s = cls(**kwargs)
+        base = Path(base_dir) if base_dir else PROJECT_DIR
+        for name in ("log_dir", "state_file"):
+            value = getattr(s, name)
+            if value and not Path(value).is_absolute():
+                setattr(s, name, str(base / value))
         s.validate()
         return s
 
     def validate(self):
+        if self.heartbeat_seconds != 0 and self.heartbeat_seconds < 60:
+            raise ConfigError("HEARTBEAT_SECONDS must be 0 (off) or at least 60")
         if self.broker not in BROKERS:
             raise ConfigError(f"BROKER must be one of {BROKERS}, got {self.broker!r}")
         if self.granularity not in GRANULARITY_SECONDS:
@@ -127,7 +192,9 @@ class Settings:
         if self.alpaca_feed not in ("iex", "sip"):
             raise ConfigError("ALPACA_FEED must be 'iex' or 'sip'")
         if self.broker == "alpaca" and not (self.alpaca_key_id and self.alpaca_secret_key):
-            raise ConfigError("BROKER=alpaca needs ALPACA_KEY_ID and ALPACA_SECRET_KEY")
+            missing = [n for n, v in (("ALPACA_KEY_ID", self.alpaca_key_id), ("ALPACA_SECRET_KEY", self.alpaca_secret_key)) if not v]
+            raise ConfigError("BROKER=alpaca needs ALPACA_KEY_ID and ALPACA_SECRET_KEY; "
+                              f"missing or empty: {', '.join(missing)}\n  " + _env_help())
         if self.broker == "oanda" and not (self.oanda_token and self.oanda_account_id):
             raise ConfigError("BROKER=oanda needs OANDA_TOKEN and OANDA_ACCOUNT_ID")
 
