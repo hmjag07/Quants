@@ -15,3 +15,4 @@ ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized
 2026-10-22T20:00:07+00:00,2026-10-22T19:45:00+00:00,REJECTED,SPY,,,,,,,,close failed (signal_change): SPY: US market is closed - cannot close,,alpaca
 2026-10-22T20:15:06+00:00,2026-10-22T20:00:00+00:00,REJECTED,SPY,,,,,,,,close failed (signal_change): SPY: US market is closed - cannot close,,alpaca
 2026-10-23T15:15:08+00:00,2026-10-23T15:00:00+00:00,REJECTED,SPY,,,,,,,,"close failed (signal_change): /v2/positions/SPY -> HTTP 403: insufficient qty available for order (requested: 130, available: 0)",,alpaca
+2026-10-23T15:30:14+00:00,2026-10-23T15:15:00+00:00,EXIT,SPY,1,130,762.953846,,,-39.5,99435.34,signal_change,c20d434a-4f5f-4e0f-b874-2a86e75c17e2,alpaca
