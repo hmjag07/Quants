@@ -64,3 +64,4 @@ ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized
 2026-11-03T13:45:06+00:00,2026-11-03T13:30:00+00:00,SKIP,SPY,-1,,,,,,,market closed,,alpaca
 2026-11-03T14:31:10+00:00,2026-11-03T14:15:00+00:00,REJECTED,SPY,-1,131,,756.53,746.33,,,/v2/orders -> HTTP 422: client_order_id must be unique,,alpaca
 2026-11-03T15:00:16+00:00,2026-11-03T14:45:00+00:00,ENTRY,SPY,-1,131,753.609008,756.57,746.49,,99123.83,signal,75b68c7b-5db9-48cf-99f1-25540c53e313,alpaca
+2026-11-03T15:15:12+00:00,2026-11-03T15:00:00+00:00,EXIT,SPY,1,131,754.27,,,-86.59,99034.75,signal_change,29bbca06-3de3-4fdc-8908-4f03558db0e8,alpaca
