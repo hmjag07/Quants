@@ -116,3 +116,4 @@ ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized
 2026-11-16T14:15:06+00:00,2026-11-16T14:00:00+00:00,SKIP,SPY,-1,,,,,,,market closed,,alpaca
 2026-11-16T14:45:16+00:00,2026-11-16T14:30:00+00:00,ENTRY,SPY,-1,132,749.402879,751.29,743.51,,99210.88,signal,a75a67cf-c8d5-4c91-8241-7442704d7a6d,alpaca
 2026-11-16T15:30:06+00:00,2026-11-16T15:15:00+00:00,EXIT,SPY,1,,,,,,100017.83,stop_or_take_profit,,alpaca
+2026-11-17T15:15:15+00:00,2026-11-17T15:00:00+00:00,ENTRY,SPY,-1,135,737.354814,739.96,730.99,,99986.73,signal,b26229d5-c5a2-45f6-955a-da2e8ba28d7a,alpaca
