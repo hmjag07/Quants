@@ -123,3 +123,4 @@ ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized
 2026-11-17T19:30:14+00:00,2026-11-17T19:15:00+00:00,ENTRY,SPY,-1,119,730.782352,734.96,722.32,,100845.51,signal,1969c25d-c9fd-4b07-8db1-cdb910082c84,alpaca
 2026-11-17T21:15:06+00:00,2026-11-17T21:00:00+00:00,REJECTED,SPY,,,,,,,,close failed (signal_change): SPY: US market is closed - cannot close,,alpaca
 2026-11-17T21:30:06+00:00,2026-11-17T21:15:00+00:00,REJECTED,SPY,,,,,,,,close failed (signal_change): SPY: US market is closed - cannot close,,alpaca
+2026-11-18T13:30:06+00:00,2026-11-18T13:15:00+00:00,REJECTED,SPY,,,,,,,,close failed (signal_change): SPY: US market is closed - cannot close,,alpaca
