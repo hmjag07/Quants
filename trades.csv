@@ -169,3 +169,4 @@ ts_utc,bar_time,event,instrument,side,units,price,stop_loss,take_profit,realized
 2026-11-27T14:31:09+00:00,2026-11-27T14:15:00+00:00,REJECTED,SPY,1,98,,720.51,735.95,,,/v2/orders -> HTTP 422: client_order_id must be unique,,alpaca
 2026-11-27T14:45:12+00:00,2026-11-27T14:30:00+00:00,ENTRY,SPY,1,90,722.676222,717.29,733.99,,101064.47,signal,a6167759-6fac-4942-bdc1-992d3ab1c701,alpaca
 2026-11-27T16:15:10+00:00,2026-11-27T16:00:00+00:00,EXIT,SPY,-1,90,724.497778,,,163.94,101230.77,signal_change,28436b39-c1d5-4484-af9e-e445cafcd0fd,alpaca
+2026-11-27T17:00:12+00:00,2026-11-27T16:45:00+00:00,ENTRY,SPY,1,89,726.447416,720.82,737.78,,101235.01,signal,64e7639a-8521-47ff-986c-02cdb5cb4b4f,alpaca
